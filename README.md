@@ -88,10 +88,14 @@ sigilforge/
 ├── sigilforge-daemon/      # Background service with local API
 ├── sigilforge-cli/         # CLI tool for humans
 └── docs/
+    ├── STRUCTURE.md        # Documentation organization guide
     ├── ARCHITECTURE.md     # System design and components
     ├── ROADMAP.md          # Development phases
     ├── INTERFACES.md       # Trait definitions and API contracts
-    └── NEXT_STEPS.md       # Concrete next tasks for development
+    ├── NEXT_STEPS.md       # Concrete next tasks for development
+    ├── RELEASE.md          # Release process and versioning
+    └── versions/           # Versioned documentation snapshots
+        └── v0.1.0/        # Documentation for v0.1.0
 ```
 
 ## Getting Started
@@ -154,6 +158,17 @@ Applications can communicate with `sigilforge-daemon` over a Unix socket (Linux/
 ```
 
 See `docs/INTERFACES.md` for the full API specification.
+
+## Documentation
+
+- **[STRUCTURE.md](docs/STRUCTURE.md)**: Documentation organization and versioning conventions
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**: System design and component details
+- **[INTERFACES.md](docs/INTERFACES.md)**: API contracts and trait definitions
+- **[ROADMAP.md](docs/ROADMAP.md)**: Development phases and future plans
+- **[NEXT_STEPS.md](docs/NEXT_STEPS.md)**: Current development tasks
+- **[RELEASE.md](docs/RELEASE.md)**: Release process and versioning workflow
+
+For version-specific documentation, see [docs/versions/](docs/versions/).
 
 ## License
 
