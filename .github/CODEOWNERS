@@ -1,0 +1,18 @@
+# CODEOWNERS for sigilforge
+#
+# These owners will be requested for review when someone opens a pull request
+# that modifies files matching the patterns below.
+
+# Release and CI infrastructure
+/.github/workflows/ @raibid-labs/maintainers
+/docs/RELEASE.md @raibid-labs/maintainers
+/CHANGELOG.md @raibid-labs/maintainers
+
+# Core library changes
+/sigilforge-core/ @raibid-labs/maintainers
+
+# Documentation structure
+/docs/STRUCTURE.md @raibid-labs/maintainers
+
+# Workspace configuration
+/Cargo.toml @raibid-labs/maintainers
