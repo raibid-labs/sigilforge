@@ -32,6 +32,9 @@ uuid = { workspace = true }
 # URL parsing (for auth:// URIs)
 url = { workspace = true }
 
+# Platform-specific directories
+directories = { workspace = true }
+
 # Secret storage backends (optional features)
 keyring = { workspace = true, optional = true }
 
@@ -47,3 +50,4 @@ full = ["keyring-store", "oauth"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3.13"
