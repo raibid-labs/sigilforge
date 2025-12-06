@@ -17,8 +17,10 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::FmtSubscriber;
+
+mod client;
 
 #[derive(Parser)]
 #[command(name = "sigilforge")]
@@ -124,6 +126,30 @@ async fn main() -> Result<()> {
 }
 
 async fn add_account(service: &str, account: &str, scopes: Option<&str>) -> Result<()> {
+    let mut client = client::DaemonClient::connect_default().await?;
+
+    if client.is_connected() {
+        let scope_vec = scopes
+            .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default();
+
+        match client.add_account(service, account, scope_vec).await {
+            Ok(response) => {
+                println!("{}", response.message);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Daemon call failed: {}", e);
+                fallback_add_account(service, account, scopes).await
+            }
+        }
+    } else {
+        warn!("Daemon not available, using fallback mode");
+        fallback_add_account(service, account, scopes).await
+    }
+}
+
+async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>) -> Result<()> {
     use sigilforge_core::{Account, AccountId, AccountStore, ServiceId};
 
     let store = AccountStore::load()?;
@@ -152,6 +178,38 @@ async fn add_account(service: &str, account: &str, scopes: Option<&str>) -> Resu
 }
 
 async fn list_accounts(service_filter: Option<&str>) -> Result<()> {
+    let mut client = client::DaemonClient::connect_default().await?;
+
+    if client.is_connected() {
+        match client.list_accounts(service_filter).await {
+            Ok(response) => {
+                if response.accounts.is_empty() {
+                    println!("No accounts configured");
+                } else {
+                    println!("Configured accounts:");
+                    for account in response.accounts {
+                        println!("  {}/{}", account.service, account.account);
+                        println!("    Scopes: {}", account.scopes.join(", "));
+                        println!("    Created: {}", account.created_at);
+                        if let Some(last_used) = account.last_used {
+                            println!("    Last used: {}", last_used);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Daemon call failed: {}", e);
+                fallback_list_accounts(service_filter).await
+            }
+        }
+    } else {
+        warn!("Daemon not available, using fallback mode");
+        fallback_list_accounts(service_filter).await
+    }
+}
+
+async fn fallback_list_accounts(service_filter: Option<&str>) -> Result<()> {
     use sigilforge_core::{AccountStore, ServiceId};
 
     let store = AccountStore::load()?;
@@ -168,11 +226,6 @@ async fn list_accounts(service_filter: Option<&str>) -> Result<()> {
     }
 
     println!("Configured accounts:");
-    if let Some(service) = service_filter {
-        println!("  (filtered by service: {})", service);
-    }
-    println!();
-
     for account in accounts {
         println!("  {}/{}", account.service, account.id);
         if !account.scopes.is_empty() {
@@ -188,6 +241,39 @@ async fn list_accounts(service_filter: Option<&str>) -> Result<()> {
 }
 
 async fn get_token(service: &str, account: &str, format: &str) -> Result<()> {
+    let mut client = client::DaemonClient::connect_default().await?;
+
+    if client.is_connected() {
+        match client.get_token(service, account).await {
+            Ok(response) => {
+                match format {
+                    "json" => {
+                        let json_output = serde_json::json!({
+                            "service": service,
+                            "account": account,
+                            "token": response.token,
+                            "expires_at": response.expires_at,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&json_output)?);
+                    }
+                    _ => {
+                        println!("{}", response.token);
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Daemon call failed: {}", e);
+                fallback_get_token(service, account, format).await
+            }
+        }
+    } else {
+        warn!("Daemon not available, using fallback mode");
+        fallback_get_token(service, account, format).await
+    }
+}
+
+async fn fallback_get_token(service: &str, account: &str, format: &str) -> Result<()> {
     println!("[stub] Getting token for {}/{}", service, account);
 
     match format {
@@ -267,6 +353,26 @@ async fn remove_account(service: &str, account: &str, force: bool) -> Result<()>
 }
 
 async fn resolve_reference(reference: &str) -> Result<()> {
+    let mut client = client::DaemonClient::connect_default().await?;
+
+    if client.is_connected() {
+        match client.resolve(reference).await {
+            Ok(response) => {
+                println!("{}", response.value);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Daemon call failed: {}", e);
+                fallback_resolve_reference(reference).await
+            }
+        }
+    } else {
+        warn!("Daemon not available, using fallback mode");
+        fallback_resolve_reference(reference).await
+    }
+}
+
+async fn fallback_resolve_reference(reference: &str) -> Result<()> {
     use sigilforge_core::CredentialRef;
 
     match CredentialRef::from_auth_uri(reference) {

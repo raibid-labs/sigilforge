@@ -19,6 +19,7 @@ sigilforge-core = { path = "sigilforge-core" }
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -59,3 +60,6 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Async traits
 async-trait = "0.1"
+
+# JSON-RPC
+jsonrpsee = { version = "0.24", features = ["server", "client", "macros"] }

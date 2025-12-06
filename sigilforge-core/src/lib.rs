@@ -27,6 +27,15 @@ pub mod resolve;
 pub mod error;
 pub mod account_store;
 
+#[cfg(feature = "oauth")]
+pub mod provider;
+
+#[cfg(feature = "oauth")]
+pub mod token_manager;
+
+#[cfg(feature = "oauth")]
+pub mod oauth;
+
 // Re-export commonly used types at crate root
 pub use model::{
     ServiceId,
@@ -67,3 +76,12 @@ pub use account_store::{
     AccountStore,
     AccountStoreError,
 };
+
+#[cfg(feature = "oauth")]
+pub use provider::{
+    ProviderConfig,
+    ProviderRegistry,
+};
+
+#[cfg(feature = "oauth")]
+pub use token_manager::DefaultTokenManager;

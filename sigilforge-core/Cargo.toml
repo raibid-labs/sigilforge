@@ -41,13 +41,15 @@ keyring = { workspace = true, optional = true }
 # OAuth2
 oauth2 = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+rand = { version = "0.8", optional = true }
 
 [features]
 default = ["keyring-store"]
 keyring-store = ["dep:keyring"]
-oauth = ["dep:oauth2", "dep:reqwest"]
+oauth = ["dep:oauth2", "dep:reqwest", "dep:rand"]
 full = ["keyring-store", "oauth"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = "3.13"
+wiremock = "0.6"
