@@ -25,6 +25,7 @@ pub mod store;
 pub mod token;
 pub mod resolve;
 pub mod error;
+pub mod account_store;
 
 // Re-export commonly used types at crate root
 pub use model::{
@@ -40,7 +41,11 @@ pub use store::{
     SecretStore,
     StoreError,
     MemoryStore,
+    create_store,
 };
+
+#[cfg(feature = "keyring-store")]
+pub use store::KeyringStore;
 
 pub use token::{
     Token,
@@ -57,3 +62,8 @@ pub use resolve::{
 };
 
 pub use error::SigilforgeError;
+
+pub use account_store::{
+    AccountStore,
+    AccountStoreError,
+};

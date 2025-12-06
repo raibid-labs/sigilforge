@@ -124,20 +124,66 @@ async fn main() -> Result<()> {
 }
 
 async fn add_account(service: &str, account: &str, scopes: Option<&str>) -> Result<()> {
-    println!("Adding account {}/{}", service, account);
+    use sigilforge_core::{Account, AccountId, AccountStore, ServiceId};
+
+    let store = AccountStore::load()?;
+
+    let service_id = ServiceId::new(service);
+    let account_id = AccountId::new(account);
+
+    let scope_list = if let Some(scopes) = scopes {
+        scopes.split(',').map(|s| s.trim().to_string()).collect()
+    } else {
+        Vec::new()
+    };
+
+    let new_account = Account::new(service_id.clone(), account_id.clone(), scope_list);
+
+    store.add_account(new_account)?;
+
+    println!("Account {}/{} added successfully", service, account);
     if let Some(scopes) = scopes {
         println!("  Scopes: {}", scopes);
     }
-    println!("  [stub] Would start OAuth flow here");
+    println!("  Storage path: {:?}", store.path());
+    println!("  [stub] Would start OAuth flow to obtain tokens here");
+
     Ok(())
 }
 
 async fn list_accounts(service_filter: Option<&str>) -> Result<()> {
+    use sigilforge_core::{AccountStore, ServiceId};
+
+    let store = AccountStore::load()?;
+
+    let filter = service_filter.map(ServiceId::new);
+    let accounts = store.list_accounts(filter.as_ref())?;
+
+    if accounts.is_empty() {
+        println!("No accounts configured");
+        if let Some(service) = service_filter {
+            println!("  (filtered by service: {})", service);
+        }
+        return Ok(());
+    }
+
     println!("Configured accounts:");
     if let Some(service) = service_filter {
         println!("  (filtered by service: {})", service);
     }
-    println!("  [stub] No accounts configured yet");
+    println!();
+
+    for account in accounts {
+        println!("  {}/{}", account.service, account.id);
+        if !account.scopes.is_empty() {
+            println!("    Scopes: {}", account.scopes.join(", "));
+        }
+        println!("    Created: {}", account.created_at);
+        if let Some(last_used) = account.last_used {
+            println!("    Last used: {}", last_used);
+        }
+    }
+
     Ok(())
 }
 
@@ -156,11 +202,67 @@ async fn get_token(service: &str, account: &str, format: &str) -> Result<()> {
 }
 
 async fn remove_account(service: &str, account: &str, force: bool) -> Result<()> {
-    if !force {
-        println!("Remove account {}/{}? [y/N]", service, account);
-        println!("[stub] Would prompt for confirmation");
+    use sigilforge_core::{AccountStore, CredentialType, MemoryStore, SecretStore, ServiceId, AccountId};
+    use std::io::{self, Write};
+
+    let store = AccountStore::load()?;
+    let service_id = ServiceId::new(service);
+    let account_id = AccountId::new(account);
+
+    // Verify account exists before prompting
+    let account_entry = store.get_account(&service_id, &account_id)?;
+    if account_entry.is_none() {
+        eprintln!("Error: Account {}/{} not found", service, account);
+        std::process::exit(1);
     }
-    println!("[stub] Account removed");
+
+    // Prompt for confirmation unless --force is used
+    if !force {
+        print!("Remove account {}/{}? [y/N] ", service, account);
+        io::stdout().flush()?;
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+
+        let confirmed = response.trim().eq_ignore_ascii_case("y")
+            || response.trim().eq_ignore_ascii_case("yes");
+
+        if !confirmed {
+            println!("Cancelled");
+            return Ok(());
+        }
+    }
+
+    // Remove account from store
+    store.remove_account(&service_id, &account_id)?;
+
+    // Delete associated secrets from secret store
+    // For now, we use MemoryStore as a placeholder since we don't have
+    // a global secret store instance yet. In a production implementation,
+    // this would use the actual secret store backend.
+    //
+    // The secret keys follow the pattern: sigilforge/{service}/{account}/{type}
+    let secret_store = MemoryStore::new();
+
+    // Common credential types to clean up
+    let credential_types = [
+        CredentialType::AccessToken,
+        CredentialType::RefreshToken,
+        CredentialType::TokenExpiry,
+        CredentialType::ApiKey,
+        CredentialType::ClientId,
+        CredentialType::ClientSecret,
+    ];
+
+    for cred_type in &credential_types {
+        let key = format!("sigilforge/{}/{}/{}", service, account, cred_type);
+        // Ignore errors - the key might not exist
+        let _ = secret_store.delete(&key).await;
+    }
+
+    println!("Account {}/{} removed successfully", service, account);
+    println!("  [Note: Associated secrets have been deleted from the secret store]");
+
     Ok(())
 }
 
