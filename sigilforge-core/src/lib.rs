@@ -40,7 +40,11 @@ pub use store::{
     SecretStore,
     StoreError,
     MemoryStore,
+    create_store,
 };
+
+#[cfg(feature = "keyring-store")]
+pub use store::KeyringStore;
 
 pub use token::{
     Token,
