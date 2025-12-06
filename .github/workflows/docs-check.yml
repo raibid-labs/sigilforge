@@ -1,0 +1,70 @@
+name: Documentation Check
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+  workflow_dispatch:
+
+jobs:
+  check-links:
+    name: Check Markdown Links
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.github/markdown-link-check.json'
+        continue-on-error: true
+
+  check-structure:
+    name: Verify Documentation Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          echo "Checking required documentation files..."
+
+          # Required root docs
+          test -f docs/STRUCTURE.md || (echo "ERROR: Missing docs/STRUCTURE.md" && exit 1)
+          test -f docs/ARCHITECTURE.md || (echo "ERROR: Missing docs/ARCHITECTURE.md" && exit 1)
+          test -f docs/INTERFACES.md || (echo "ERROR: Missing docs/INTERFACES.md" && exit 1)
+          test -f docs/ROADMAP.md || (echo "ERROR: Missing docs/ROADMAP.md" && exit 1)
+          test -f docs/NEXT_STEPS.md || (echo "ERROR: Missing docs/NEXT_STEPS.md" && exit 1)
+          test -f README.md || (echo "ERROR: Missing README.md" && exit 1)
+
+          # Optional but recommended
+          test -f CHANGELOG.md || echo "WARNING: Missing CHANGELOG.md"
+          test -f docs/RELEASE.md || echo "WARNING: Missing docs/RELEASE.md"
+
+          # Check versioned docs structure
+          if [ -d docs/versions ]; then
+            echo "Found docs/versions directory"
+            version_count=$(find docs/versions -mindepth 1 -maxdepth 1 -type d | wc -l)
+            echo "Version directories: $version_count"
+          fi
+
+          echo "Documentation structure check passed!"
+
+  check-formatting:
+    name: Check Markdown Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+
+      - name: Run markdownlint
+        run: markdownlint '**/*.md' --ignore node_modules --ignore target
+        continue-on-error: true
