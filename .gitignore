@@ -30,6 +30,8 @@
 *.profdata
 coverage/
 tarpaulin-report.html
+cobertura.xml
+lcov.info
 
 # Documentation build
 /doc/
