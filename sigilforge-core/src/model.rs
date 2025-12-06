@@ -165,6 +165,9 @@ pub enum CredentialType {
     /// OAuth client secret (usually at provider level).
     ClientSecret,
 
+    /// OAuth scopes (comma-separated).
+    TokenScopes,
+
     /// Custom credential type.
     Custom(String),
 }
@@ -179,6 +182,7 @@ impl CredentialType {
             Self::ApiKey => "api_key",
             Self::ClientId => "client_id",
             Self::ClientSecret => "client_secret",
+            Self::TokenScopes => "token_scopes",
             Self::Custom(s) => s,
         }
     }
