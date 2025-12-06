@@ -15,6 +15,7 @@ use anyhow::Result;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
+mod api;
 mod config;
 
 #[tokio::main]
@@ -37,10 +38,30 @@ fn init_logging() {
 }
 
 async fn run_daemon(config: config::DaemonConfig) -> Result<()> {
-    info!("Daemon running on {:?}", config.socket_path);
+    info!("Daemon starting on {:?}", config.socket_path);
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-        info!("Daemon heartbeat");
+    // Create API state
+    let state = api::ApiState::new();
+
+    // Start the JSON-RPC server
+    let server_handle = api::start_server(&config.socket_path, state).await?;
+
+    info!("Daemon running. Press Ctrl+C to stop.");
+
+    // Wait for shutdown signal
+    tokio::signal::ctrl_c().await?;
+    info!("Shutdown signal received, stopping server...");
+
+    // Stop the server gracefully
+    server_handle.stop()?;
+    server_handle.stopped().await;
+
+    // Clean up socket file
+    if config.socket_path.exists() {
+        std::fs::remove_file(&config.socket_path)?;
+        info!("Socket file removed");
     }
+
+    info!("Daemon stopped");
+    Ok(())
 }

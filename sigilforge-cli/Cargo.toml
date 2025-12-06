@@ -34,3 +34,6 @@ tracing-subscriber = { workspace = true }
 
 # Configuration
 directories = { workspace = true }
+
+# JSON-RPC client
+jsonrpsee = { workspace = true }
