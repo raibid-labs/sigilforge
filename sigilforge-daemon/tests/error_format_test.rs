@@ -44,15 +44,18 @@ fn can_bind_unix_socket() -> bool {
 }
 
 /// Helper to send raw JSON-RPC request and get raw response
+/// Creates a fresh connection for each request to avoid stream state issues.
 async fn send_raw_request(
-    stream: &mut UnixStream,
+    socket_path: &std::path::Path,
     request: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let mut stream = UnixStream::connect(socket_path).await?;
     stream.write_all(request.as_bytes()).await?;
     stream.write_all(b"\n").await?;
     stream.flush().await?;
 
-    let mut reader = BufReader::new(stream);
+    let (reader, _writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
     let mut response_str = String::new();
     reader.read_line(&mut response_str).await?;
 
@@ -74,19 +77,20 @@ async fn test_jsonrpc_error_format_compliance() {
     let store = AccountStore::load_from_path(store_path).unwrap();
     start_test_server(&socket_path, store).await;
 
-    sleep(Duration::from_millis(100)).await;
-
-    if !socket_path.exists() {
-        panic!("Socket file was not created at {:?}", socket_path);
+    // Wait for socket file to appear (up to 2 seconds)
+    let mut attempts = 0;
+    while !socket_path.exists() && attempts < 20 {
+        sleep(Duration::from_millis(100)).await;
+        attempts += 1;
     }
 
-    let mut stream = UnixStream::connect(&socket_path)
-        .await
-        .expect("Failed to connect to daemon");
+    if !socket_path.exists() {
+        panic!("Socket file was not created at {:?} after 2 seconds", socket_path);
+    }
 
     // Test 1: Parse error (invalid JSON)
     println!("\n=== Test 1: Parse Error ===");
-    let response = send_raw_request(&mut stream, "{invalid json}\n")
+    let response = send_raw_request(&socket_path, "{invalid json}")
         .await
         .expect("Failed to get response");
 
@@ -113,7 +117,7 @@ async fn test_jsonrpc_error_format_compliance() {
         "id": 42
     });
 
-    let response = send_raw_request(&mut stream, &request.to_string())
+    let response = send_raw_request(&socket_path, &request.to_string())
         .await
         .expect("Failed to get response");
 
@@ -140,7 +144,7 @@ async fn test_jsonrpc_error_format_compliance() {
         "id": 100
     });
 
-    let response = send_raw_request(&mut stream, &request.to_string())
+    let response = send_raw_request(&socket_path, &request.to_string())
         .await
         .expect("Failed to get response");
 
@@ -165,7 +169,7 @@ async fn test_jsonrpc_error_format_compliance() {
         "id": 200
     });
 
-    let response = send_raw_request(&mut stream, &request.to_string())
+    let response = send_raw_request(&socket_path, &request.to_string())
         .await
         .expect("Failed to get response");
 
@@ -190,7 +194,7 @@ async fn test_jsonrpc_error_format_compliance() {
         "id": 300
     });
 
-    let response = send_raw_request(&mut stream, &request.to_string())
+    let response = send_raw_request(&socket_path, &request.to_string())
         .await
         .expect("Failed to get response");
 

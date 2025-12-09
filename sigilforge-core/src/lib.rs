@@ -68,7 +68,11 @@ pub use resolve::{
     ResolvedValue,
     ReferenceResolver,
     ResolveError,
+    ResolverConfig,
 };
+
+#[cfg(feature = "oauth")]
+pub use resolve::DefaultReferenceResolver;
 
 pub use error::SigilforgeError;
 

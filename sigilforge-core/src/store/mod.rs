@@ -144,6 +144,33 @@ pub trait SecretStore: Send + Sync {
     }
 }
 
+/// Blanket implementation of SecretStore for Box<dyn SecretStore>.
+///
+/// This allows using `Box<dyn SecretStore>` anywhere a `SecretStore` is expected,
+/// enabling dynamic dispatch for secret storage backends.
+#[async_trait]
+impl SecretStore for Box<dyn SecretStore> {
+    async fn get(&self, key: &str) -> Result<Option<Secret>, StoreError> {
+        (**self).get(key).await
+    }
+
+    async fn set(&self, key: &str, secret: &Secret) -> Result<(), StoreError> {
+        (**self).set(key, secret).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<(), StoreError> {
+        (**self).delete(key).await
+    }
+
+    async fn list_keys(&self, prefix: &str) -> Result<Vec<String>, StoreError> {
+        (**self).list_keys(prefix).await
+    }
+
+    async fn exists(&self, key: &str) -> Result<bool, StoreError> {
+        (**self).exists(key).await
+    }
+}
+
 /// Create a secret store with automatic backend selection.
 ///
 /// This helper function selects the best available backend based on:

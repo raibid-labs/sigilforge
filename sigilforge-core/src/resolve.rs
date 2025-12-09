@@ -151,6 +151,146 @@ impl Default for ResolverConfig {
     }
 }
 
+/// Default implementation of ReferenceResolver.
+///
+/// This resolver handles:
+/// - `auth://` URIs for Sigilforge-managed credentials
+/// - Token refresh when fetching access tokens
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sigilforge_core::{
+///     DefaultReferenceResolver,
+///     token_manager::DefaultTokenManager,
+///     store::MemoryStore,
+///     provider::ProviderRegistry,
+/// };
+///
+/// let store = MemoryStore::new();
+/// let providers = ProviderRegistry::with_defaults();
+/// let token_manager = DefaultTokenManager::new(store.clone(), providers);
+/// let resolver = DefaultReferenceResolver::new(store, token_manager);
+///
+/// let value = resolver.resolve("auth://spotify/personal/token").await?;
+/// ```
+#[cfg(feature = "oauth")]
+pub struct DefaultReferenceResolver<S, T>
+where
+    S: crate::store::SecretStore,
+    T: crate::token::TokenManager,
+{
+    store: S,
+    token_manager: T,
+    config: ResolverConfig,
+}
+
+#[cfg(feature = "oauth")]
+impl<S, T> DefaultReferenceResolver<S, T>
+where
+    S: crate::store::SecretStore,
+    T: crate::token::TokenManager,
+{
+    /// Create a new resolver with the given store and token manager.
+    pub fn new(store: S, token_manager: T) -> Self {
+        Self {
+            store,
+            token_manager,
+            config: ResolverConfig::default(),
+        }
+    }
+
+    /// Create a new resolver with custom configuration.
+    pub fn with_config(store: S, token_manager: T, config: ResolverConfig) -> Self {
+        Self {
+            store,
+            token_manager,
+            config,
+        }
+    }
+}
+
+#[cfg(feature = "oauth")]
+#[async_trait]
+impl<S, T> ReferenceResolver for DefaultReferenceResolver<S, T>
+where
+    S: crate::store::SecretStore + Send + Sync + 'static,
+    T: crate::token::TokenManager + Send + Sync + 'static,
+{
+    async fn resolve(&self, reference: &str) -> Result<ResolvedValue, ResolveError> {
+        // Check for auth:// scheme
+        if reference.starts_with("auth://") {
+            if !self.config.enable_auth_scheme {
+                return Err(ResolveError::UnsupportedScheme {
+                    scheme: "auth".to_string(),
+                });
+            }
+
+            let cred_ref = CredentialRef::from_auth_uri(reference).map_err(|e| {
+                ResolveError::InvalidFormat {
+                    message: e.to_string(),
+                }
+            })?;
+
+            return self.resolve_ref(&cred_ref).await;
+        }
+
+        // Check for vals:ref+ scheme
+        if reference.starts_with("vals:ref+") {
+            if !self.config.enable_vals {
+                return Err(ResolveError::UnsupportedScheme {
+                    scheme: "vals".to_string(),
+                });
+            }
+
+            // TODO: Shell out to vals for external resolution
+            return Err(ResolveError::ExternalError {
+                message: "vals resolution not yet implemented".to_string(),
+            });
+        }
+
+        Err(ResolveError::InvalidFormat {
+            message: format!("unknown reference format: {}", reference),
+        })
+    }
+
+    async fn resolve_ref(&self, cred_ref: &CredentialRef) -> Result<ResolvedValue, ResolveError> {
+        use crate::model::CredentialType;
+
+        match &cred_ref.credential_type {
+            // For access tokens, use the token manager (handles refresh)
+            CredentialType::AccessToken => {
+                let token = self
+                    .token_manager
+                    .ensure_access_token(&cred_ref.service, &cred_ref.account)
+                    .await?;
+                Ok(ResolvedValue::Secret(Secret::new(
+                    token.access_token.expose(),
+                )))
+            }
+
+            // For other credential types, fetch directly from store
+            _ => {
+                let key = cred_ref.to_key();
+                match self.store.get(&key).await? {
+                    Some(secret) => Ok(ResolvedValue::Secret(secret)),
+                    None => Err(ResolveError::NotFound {
+                        reference: cred_ref.to_auth_uri(),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn supports_scheme(&self, scheme: &str) -> bool {
+        match scheme {
+            "auth" => self.config.enable_auth_scheme,
+            "vals" => self.config.enable_vals,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

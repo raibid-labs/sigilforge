@@ -196,14 +196,17 @@ async fn test_get_token() {
     .await
     .expect("add_account failed");
 
-    // Get a token for the account
-    let token_response: GetTokenResponse =
-        send_rpc_request(&mut stream, "get_token", json!(["spotify", "personal"]), 2)
-            .await
-            .expect("get_token failed");
+    // Get a token for the account - this should return an error because
+    // no OAuth flow has been performed and no token is stored.
+    // This is the expected behavior after wiring to the real TokenManager.
+    let result: Result<GetTokenResponse, _> =
+        send_rpc_request(&mut stream, "get_token", json!(["spotify", "personal"]), 2).await;
 
-    assert!(!token_response.token.is_empty());
-    assert!(token_response.expires_at.is_some());
+    // Token retrieval should fail since no OAuth was performed
+    assert!(
+        result.is_err(),
+        "get_token should fail when no token is stored (OAuth not performed)"
+    );
 
     handle.stop().await.expect("Failed to stop server");
 }
@@ -232,22 +235,27 @@ async fn test_resolve() {
     .await
     .expect("add_account failed");
 
-    // Resolve a credential reference
+    // Resolve a credential reference - this should return an error because
+    // no OAuth flow has been performed and no token is stored.
+    // This is the expected behavior after wiring to the real ReferenceResolver.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct ResolveResponse {
         value: String,
     }
 
-    let resolve_response: ResolveResponse = send_rpc_request(
+    let result: Result<ResolveResponse, _> = send_rpc_request(
         &mut stream,
         "resolve",
         json!(["auth://spotify/personal/token"]),
         2,
     )
-    .await
-    .expect("resolve failed");
+    .await;
 
-    assert!(!resolve_response.value.is_empty());
+    // Token resolution should fail since no OAuth was performed
+    assert!(
+        result.is_err(),
+        "resolve should fail when no token is stored (OAuth not performed)"
+    );
 
     handle.stop().await.expect("Failed to stop server");
 }

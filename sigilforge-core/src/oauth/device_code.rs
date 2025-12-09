@@ -34,11 +34,7 @@
 //!          device_auth.verification_uri,
 //!          device_auth.user_code);
 //!
-//! let token_set = flow.poll_for_token(
-//!     &device_auth.device_code,
-//!     device_auth.interval,
-//!     device_auth.expires_in,
-//! ).await?;
+//! let token_set = flow.poll_for_token(&device_auth).await?;
 //! # Ok(())
 //! # }
 //! ```

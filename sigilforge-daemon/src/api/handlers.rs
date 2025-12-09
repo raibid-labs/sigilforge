@@ -3,6 +3,12 @@
 use sigilforge_core::{
     account_store::AccountStore,
     model::{Account, AccountId, ServiceId},
+    store::{create_store, SecretStore},
+    token_manager::DefaultTokenManager,
+    provider::ProviderRegistry,
+    TokenManager,
+    DefaultReferenceResolver,
+    ReferenceResolver,
 };
 use std::sync::Arc;
 
@@ -42,26 +48,69 @@ use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::{ErrorCode, ErrorObject};
 use tracing::{debug, info};
 
+/// Type alias for the token manager used by the daemon.
+pub type DaemonTokenManager = DefaultTokenManager<Box<dyn SecretStore>>;
+
+/// Type alias for the reference resolver used by the daemon.
+pub type DaemonResolver = DefaultReferenceResolver<Box<dyn SecretStore>, DaemonTokenManager>;
+
 /// State shared across RPC handlers.
 pub struct ApiState {
     /// Persistent account store
     pub accounts: Arc<AccountStore>,
+    /// Token manager for token operations
+    pub token_manager: Arc<DaemonTokenManager>,
+    /// Reference resolver for auth:// URIs
+    pub resolver: Arc<DaemonResolver>,
 }
 
 impl ApiState {
     /// Create a new API state.
     pub fn new() -> Result<Self> {
         let accounts = AccountStore::load()?;
+
+        // Create secret store (prefer keyring)
+        let store = create_store(true);
+
+        // Create provider registry with defaults
+        let providers = ProviderRegistry::with_defaults();
+
+        // Create token manager
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        // Clone references for resolver (store is moved, so we need to create another)
+        let resolver_store = create_store(true);
+        let resolver_token_manager = DefaultTokenManager::new(
+            create_store(true),
+            ProviderRegistry::with_defaults(),
+        );
+        let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
+
         Ok(Self {
             accounts: Arc::new(accounts),
+            token_manager: Arc::new(token_manager),
+            resolver: Arc::new(resolver),
         })
     }
 
     /// Create API state with a provided account store (useful for tests).
     #[allow(dead_code)]
     pub fn with_store(accounts: AccountStore) -> Self {
+        let store = create_store(false); // Use memory store for tests
+        let providers = ProviderRegistry::new();
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        let resolver_store = create_store(false);
+        let resolver_token_manager = DefaultTokenManager::new(
+            create_store(false),
+            ProviderRegistry::new(),
+        );
+        let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
+
         Self {
             accounts: Arc::new(accounts),
+            token_manager: Arc::new(token_manager),
+            resolver: Arc::new(resolver),
         }
     }
 }
@@ -173,12 +222,29 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
             .update_last_used(&service_id, &account_id)
             .map_err(internal_error);
 
-        // TODO: Integrate with actual token manager
-        // For now, return a stub token
-        Ok(GetTokenResponse {
-            token: format!("stub_token_for_{}_{}", service, account),
-            expires_at: Some("2025-12-07T00:00:00Z".to_string()),
-        })
+        // Use the token manager to get a valid token (handles refresh)
+        match self
+            .state
+            .token_manager
+            .ensure_access_token(&service_id, &account_id)
+            .await
+        {
+            Ok(token) => {
+                let expires_at = token.expires_at.map(|dt| dt.to_rfc3339());
+                Ok(GetTokenResponse {
+                    token: token.access_token.expose().to_string(),
+                    expires_at,
+                })
+            }
+            Err(e) => {
+                // If no token found, return a more helpful error
+                Err(ErrorObject::owned(
+                    ErrorCode::InternalError.code(),
+                    format!("Failed to get token: {}. You may need to re-authenticate.", e),
+                    None::<()>,
+                ))
+            }
+        }
     }
 
     async fn list_accounts(&self, service: Option<String>) -> RpcResult<ListAccountsResponse> {
@@ -242,7 +308,7 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
     async fn resolve(&self, reference: String) -> RpcResult<ResolveResponse> {
         info!("RPC: resolve({})", reference);
 
-        // Parse the reference
+        // Parse and validate the reference first
         use sigilforge_core::CredentialRef;
         let cred_ref = CredentialRef::from_auth_uri(&reference).map_err(|e| {
             ErrorObject::owned(
@@ -268,14 +334,17 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
             ));
         }
 
-        // TODO: Integrate with actual resolver
-        // For now, return a stub value
-        Ok(ResolveResponse {
-            value: format!(
-                "resolved_{}_{}_{}",
-                cred_ref.service, cred_ref.account, cred_ref.credential_type
-            ),
-        })
+        // Use the resolver to get the actual value
+        match self.state.resolver.resolve(&reference).await {
+            Ok(resolved) => Ok(ResolveResponse {
+                value: resolved.expose(),
+            }),
+            Err(e) => Err(ErrorObject::owned(
+                ErrorCode::InternalError.code(),
+                format!("Failed to resolve reference: {}", e),
+                None::<()>,
+            )),
+        }
     }
 }
 
