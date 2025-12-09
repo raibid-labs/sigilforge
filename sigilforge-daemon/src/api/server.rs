@@ -273,20 +273,4 @@ impl ServerHandle {
     }
 }
 
-/// Configuration for the JSON-RPC server.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct ServerConfig {
-    /// Path to the Unix socket
-    pub socket_path: std::path::PathBuf,
-}
-
-impl ServerConfig {
-    /// Create a new server configuration.
-    #[allow(dead_code)]
-    pub fn new(socket_path: impl Into<std::path::PathBuf>) -> Self {
-        Self {
-            socket_path: socket_path.into(),
-        }
-    }
-}
+// ServerConfig was unused; removed for clarity.

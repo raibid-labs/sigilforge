@@ -1,19 +1,46 @@
 //! JSON-RPC API handlers for the daemon.
 
-use super::types::{
-    AccountInfo, AddAccountResponse, GetTokenResponse, ListAccountsResponse, ResolveResponse,
-};
-use anyhow::Result;
-use jsonrpsee::core::RpcResult;
-use jsonrpsee::proc_macros::rpc;
-use jsonrpsee::types::{ErrorCode, ErrorObject};
-use tracing::{debug, info};
-
 use sigilforge_core::{
     account_store::AccountStore,
     model::{Account, AccountId, ServiceId},
 };
 use std::sync::Arc;
+
+/// Information about a configured account (RPC response)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountInfo {
+    pub service: String,
+    pub account: String,
+    pub scopes: Vec<String>,
+    pub created_at: String,
+    pub last_used: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AddAccountResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GetTokenResponse {
+    pub token: String,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListAccountsResponse {
+    pub accounts: Vec<AccountInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResolveResponse {
+    pub value: String,
+}
+use anyhow::Result;
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
+use jsonrpsee::types::{ErrorCode, ErrorObject};
+use tracing::{debug, info};
 
 /// State shared across RPC handlers.
 pub struct ApiState {

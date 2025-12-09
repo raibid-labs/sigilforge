@@ -50,9 +50,8 @@ pub struct ResolveResponse {
 /// Client for communicating with the Sigilforge daemon.
 pub struct DaemonClient {
     stream: Option<UnixStream>,
-    #[allow(dead_code)]
-    socket_path: PathBuf,
     next_id: u64,
+    _socket_path: PathBuf,
 }
 
 impl DaemonClient {
@@ -65,7 +64,7 @@ impl DaemonClient {
             debug!("Socket does not exist at {:?}", socket_path);
             return Ok(Self {
                 stream: None,
-                socket_path: socket_path.to_path_buf(),
+                _socket_path: socket_path.to_path_buf(),
                 next_id: 1,
             });
         }
@@ -76,7 +75,7 @@ impl DaemonClient {
                 debug!("Successfully connected to daemon");
                 Ok(Self {
                     stream: Some(stream),
-                    socket_path: socket_path.to_path_buf(),
+                    _socket_path: socket_path.to_path_buf(),
                     next_id: 1,
                 })
             }
@@ -84,7 +83,7 @@ impl DaemonClient {
                 warn!("Failed to connect to daemon: {}", e);
                 Ok(Self {
                     stream: None,
-                    socket_path: socket_path.to_path_buf(),
+                    _socket_path: socket_path.to_path_buf(),
                     next_id: 1,
                 })
             }

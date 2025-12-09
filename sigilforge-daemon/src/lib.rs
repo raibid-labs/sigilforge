@@ -6,5 +6,5 @@
 pub mod api;
 pub mod config;
 
-pub use api::{start_server, ApiState, ServerConfig};
+pub use api::{start_server, ApiState};
 pub use config::{load_config, DaemonConfig};
