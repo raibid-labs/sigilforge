@@ -17,6 +17,11 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use sigilforge_core::{
+    account_store::AccountStore,
+    store::{KeyringStore, MemoryStore, SecretStore},
+    AccountId, CredentialType, ServiceId,
+};
 use tracing::{info, warn};
 use tracing_subscriber::FmtSubscriber;
 
@@ -288,7 +293,6 @@ async fn fallback_get_token(service: &str, account: &str, format: &str) -> Resul
 }
 
 async fn remove_account(service: &str, account: &str, force: bool) -> Result<()> {
-    use sigilforge_core::{AccountStore, CredentialType, MemoryStore, SecretStore, ServiceId, AccountId};
     use std::io::{self, Write};
 
     let store = AccountStore::load()?;
@@ -322,13 +326,26 @@ async fn remove_account(service: &str, account: &str, force: bool) -> Result<()>
     // Remove account from store
     store.remove_account(&service_id, &account_id)?;
 
-    // Delete associated secrets from secret store
-    // For now, we use MemoryStore as a placeholder since we don't have
-    // a global secret store instance yet. In a production implementation,
-    // this would use the actual secret store backend.
-    //
-    // The secret keys follow the pattern: sigilforge/{service}/{account}/{type}
-    let secret_store = MemoryStore::new();
+    delete_account_secrets(service, account).await?;
+
+    println!("Account {}/{} removed successfully", service, account);
+    println!("  Associated secrets removed from configured secret store");
+
+    Ok(())
+}
+
+async fn delete_account_secrets(service: &str, account: &str) -> Result<()> {
+    // Choose the best available secret store
+    let store: Box<dyn SecretStore + Send + Sync> = match KeyringStore::try_new("sigilforge") {
+        Ok(s) => {
+            info!("Using keyring backend to delete secrets");
+            Box::new(s)
+        }
+        Err(e) => {
+            warn!("Keyring unavailable ({}); falling back to memory store (no-op)", e);
+            Box::new(MemoryStore::new())
+        }
+    };
 
     // Common credential types to clean up
     let credential_types = [
@@ -338,16 +355,14 @@ async fn remove_account(service: &str, account: &str, force: bool) -> Result<()>
         CredentialType::ApiKey,
         CredentialType::ClientId,
         CredentialType::ClientSecret,
+        CredentialType::TokenScopes,
     ];
 
     for cred_type in &credential_types {
         let key = format!("sigilforge/{}/{}/{}", service, account, cred_type);
         // Ignore errors - the key might not exist
-        let _ = secret_store.delete(&key).await;
+        let _ = store.delete(&key).await;
     }
-
-    println!("Account {}/{} removed successfully", service, account);
-    println!("  [Note: Associated secrets have been deleted from the secret store]");
 
     Ok(())
 }

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Request to get a fresh access token for an account.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetTokenRequest {
     /// Service identifier (e.g., "spotify", "github")
@@ -21,6 +22,7 @@ pub struct GetTokenResponse {
 }
 
 /// Request to add a new account.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddAccountRequest {
     /// Service identifier
@@ -39,6 +41,7 @@ pub struct AddAccountResponse {
 }
 
 /// Request to list accounts.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListAccountsRequest {
     /// Optional service filter
@@ -68,6 +71,7 @@ pub struct ListAccountsResponse {
 }
 
 /// Request to resolve a credential reference.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveRequest {
     /// The reference to resolve (e.g., "auth://spotify/personal/token")

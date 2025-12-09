@@ -41,7 +41,7 @@ async fn run_daemon(config: config::DaemonConfig) -> Result<()> {
     info!("Daemon starting on {:?}", config.socket_path);
 
     // Create API state
-    let state = api::ApiState::new();
+    let state = api::ApiState::new()?;
 
     // Start the JSON-RPC server
     let server_handle = api::start_server(&config.socket_path, state).await?;
@@ -53,7 +53,7 @@ async fn run_daemon(config: config::DaemonConfig) -> Result<()> {
     info!("Shutdown signal received, stopping server...");
 
     // Stop the server gracefully
-    server_handle.stop()?;
+    server_handle.stop().await?;
     server_handle.stopped().await;
 
     // Clean up socket file
