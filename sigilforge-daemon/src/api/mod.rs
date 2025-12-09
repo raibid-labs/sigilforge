@@ -9,4 +9,4 @@ pub mod server;
 #[allow(unused_imports)]
 pub use handlers::{ApiState, AccountInfo, AddAccountResponse, GetTokenResponse, ListAccountsResponse, ResolveResponse};
 #[allow(unused_imports)]
-pub use server::start_server;
+pub use server::{start_server, ServerHandle};

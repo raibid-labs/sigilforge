@@ -33,6 +33,12 @@ uuid = { workspace = true }
 url = { workspace = true }
 
 # Platform-specific directories
+# Synchronization primitives
+parking_lot = { workspace = true }
+
+# Memory zeroing for secrets
+zeroize = { workspace = true }
+
 directories = { workspace = true }
 
 # Secret storage backends (optional features)

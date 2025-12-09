@@ -5,30 +5,31 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
+use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::time::{sleep, Duration};
 
 use sigilforge_core::account_store::AccountStore;
-use sigilforge_daemon::api::{start_server, ApiState};
+use sigilforge_daemon::api::{start_server, ApiState, ServerHandle};
 
-/// Helper to start a test server that stays alive for the duration of the test
-async fn start_test_server(socket_path: &std::path::Path, store: AccountStore) {
-    let socket_path = socket_path.to_path_buf();
-    tokio::spawn(async move {
-        let state = ApiState::with_store(store);
-        match start_server(&socket_path, state).await {
-            Ok(handle) => {
-                // Keep the handle alive to prevent server shutdown
-                std::mem::forget(handle);
-            }
-            Err(e) => {
-                eprintln!("Server start failed: {}", e);
-            }
-        }
-    });
+/// Helper to set up a test server with unique temp directory and socket path.
+/// Returns the temp directory (which must be kept alive), socket path, and server handle.
+async fn setup_test_server() -> (TempDir, PathBuf, ServerHandle) {
+    let temp_dir = TempDir::new().unwrap();
+    let socket_path = temp_dir.path().join("test.sock");
+    let accounts_path = temp_dir.path().join("accounts.json");
+
+    let store = AccountStore::load_from_path(accounts_path).unwrap();
+    let state = ApiState::with_store(store);
+    let handle = start_server(&socket_path, state).await.unwrap();
+
+    // Give the server time to start accepting connections
+    sleep(Duration::from_millis(100)).await;
+
+    (temp_dir, socket_path, handle)
 }
 
 /// Response containing a fresh access token.
@@ -99,9 +100,7 @@ async fn send_rpc_request<T: for<'de> Deserialize<'de>>(
         return Err(format!("RPC error: {}", error).into());
     }
 
-    let result = response
-        .get("result")
-        .ok_or("No result in response")?;
+    let result = response.get("result").ok_or("No result in response")?;
 
     Ok(serde_json::from_value(result.clone())?)
 }
@@ -113,25 +112,7 @@ async fn test_add_and_list_accounts() {
         return;
     }
 
-    // Use a unique socket path for this test
-    let socket_path = PathBuf::from("/tmp/sigilforge-test-add-list.sock");
-
-    // Remove socket if it exists
-    let _ = std::fs::remove_file(&socket_path);
-
-    // Start the server in the background with a temp account store
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-add-list.json");
-    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
-    let store = AccountStore::load_from_path(store_path).unwrap();
-    start_test_server(&socket_path, store).await;
-
-    // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(100)).await;
-
-    // Verify socket exists
-    if !socket_path.exists() {
-        panic!("Socket file was not created at {:?}", socket_path);
-    }
+    let (_temp_dir, socket_path, handle) = setup_test_server().await;
 
     // Connect to the server
     let mut stream = UnixStream::connect(&socket_path)
@@ -188,10 +169,7 @@ async fn test_add_and_list_accounts() {
     assert_eq!(list_response.accounts.len(), 1);
     assert_eq!(list_response.accounts[0].service, "spotify");
 
-    // Cleanup
-    let _ = std::fs::remove_file(&socket_path);
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-add-list.json");
-    let _ = std::fs::remove_file(&store_path);
+    handle.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -201,25 +179,7 @@ async fn test_get_token() {
         return;
     }
 
-    // Use a unique socket path for this test
-    let socket_path = PathBuf::from("/tmp/sigilforge-test-token.sock");
-
-    // Remove socket if it exists
-    let _ = std::fs::remove_file(&socket_path);
-
-    // Start the server in the background with a temp account store
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-token.json");
-    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
-    let store = AccountStore::load_from_path(store_path).unwrap();
-    start_test_server(&socket_path, store).await;
-
-    // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(100)).await;
-
-    // Verify socket exists
-    if !socket_path.exists() {
-        panic!("Socket file was not created at {:?}", socket_path);
-    }
+    let (_temp_dir, socket_path, handle) = setup_test_server().await;
 
     // Connect to the server
     let mut stream = UnixStream::connect(&socket_path)
@@ -245,10 +205,7 @@ async fn test_get_token() {
     assert!(!token_response.token.is_empty());
     assert!(token_response.expires_at.is_some());
 
-    // Cleanup
-    let _ = std::fs::remove_file(&socket_path);
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-token.json");
-    let _ = std::fs::remove_file(&store_path);
+    handle.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -258,25 +215,7 @@ async fn test_resolve() {
         return;
     }
 
-    // Use a unique socket path for this test
-    let socket_path = PathBuf::from("/tmp/sigilforge-test-resolve.sock");
-
-    // Remove socket if it exists
-    let _ = std::fs::remove_file(&socket_path);
-
-    // Start the server in the background with a temp account store
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-resolve.json");
-    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
-    let store = AccountStore::load_from_path(store_path).unwrap();
-    start_test_server(&socket_path, store).await;
-
-    // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(100)).await;
-
-    // Verify socket exists
-    if !socket_path.exists() {
-        panic!("Socket file was not created at {:?}", socket_path);
-    }
+    let (_temp_dir, socket_path, handle) = setup_test_server().await;
 
     // Connect to the server
     let mut stream = UnixStream::connect(&socket_path)
@@ -310,10 +249,7 @@ async fn test_resolve() {
 
     assert!(!resolve_response.value.is_empty());
 
-    // Cleanup
-    let _ = std::fs::remove_file(&socket_path);
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-resolve.json");
-    let _ = std::fs::remove_file(&store_path);
+    handle.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -323,25 +259,7 @@ async fn test_error_handling() {
         return;
     }
 
-    // Use a unique socket path for this test
-    let socket_path = PathBuf::from("/tmp/sigilforge-test-errors.sock");
-
-    // Remove socket if it exists
-    let _ = std::fs::remove_file(&socket_path);
-
-    // Start the server in the background with a temp account store
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-errors.json");
-    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
-    let store = AccountStore::load_from_path(store_path).unwrap();
-    start_test_server(&socket_path, store).await;
-
-    // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(100)).await;
-
-    // Verify socket exists
-    if !socket_path.exists() {
-        panic!("Socket file was not created at {:?}", socket_path);
-    }
+    let (_temp_dir, socket_path, handle) = setup_test_server().await;
 
     // Connect to the server
     let mut stream = UnixStream::connect(&socket_path)
@@ -374,8 +292,5 @@ async fn test_error_handling() {
 
     assert!(result.is_err());
 
-    // Cleanup
-    let _ = std::fs::remove_file(&socket_path);
-    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-errors.json");
-    let _ = std::fs::remove_file(&store_path);
+    handle.stop().await.expect("Failed to stop server");
 }

@@ -2,7 +2,25 @@
 
 This document outlines the development phases for Sigilforge, from initial scaffolding to full ecosystem integration.
 
+## Current Status
+
+**Version:** v0.2.0
+**Overall Completion:** ~60%
+
+| Phase | Status | Completion |
+|-------|--------|------------|
+| Phase 0: Scaffolding | Complete | 100% |
+| Phase 1: Storage & CLI | Complete | 100% |
+| Phase 2: OAuth Flows | Complete | 100% |
+| Phase 3: Daemon & API | In Progress | ~80% |
+| Phase 4: Resolution | In Progress | ~20% |
+| Phase 5: Expansion | Not Started | 0% |
+
+---
+
 ## Phase 0: Scaffolding & Core Types
+
+**Status:** COMPLETE
 
 **Goal**: Establish project structure and define domain model.
 
@@ -19,7 +37,7 @@ This document outlines the development phases for Sigilforge, from initial scaff
   - INTERFACES.md with trait definitions
   - ROADMAP.md (this file)
 
-- [ ] Define core domain types in `sigilforge-core`:
+- [x] Define core domain types in `sigilforge-core`:
   - `ServiceId` - identifier for a service (spotify, gmail, etc.)
   - `AccountId` - identifier for an account within a service
   - `Account` - full account metadata (service, id, scopes, created_at)
@@ -27,12 +45,12 @@ This document outlines the development phases for Sigilforge, from initial scaff
   - `Token` - access token with expiry
   - `TokenSet` - access + refresh token pair
 
-- [ ] Define trait stubs:
+- [x] Define trait stubs:
   - `SecretStore` - store/retrieve secrets
   - `TokenManager` - ensure valid tokens
   - `ReferenceResolver` - resolve auth:// URIs
 
-- [ ] Implement `MemoryStore`:
+- [x] Implement `MemoryStore`:
   - In-memory `SecretStore` for testing
   - No persistence; HashMap-based
 
@@ -47,32 +65,34 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 1: Basic Storage & CLI
 
+**Status:** COMPLETE
+
 **Goal**: Working CLI with OS keyring storage and mock auth.
 
 ### Tasks
 
-- [ ] Implement `KeyringStore`:
+- [x] Implement `KeyringStore`:
   - Wrap `keyring` crate
   - Handle platform differences (libsecret, Keychain, Credential Manager)
   - Key naming convention: `sigilforge/{service}/{account}/{type}`
 
-- [ ] Implement account management:
-  - `AccountRegistry` struct to manage accounts.toml
+- [x] Implement account management:
+  - `AccountStore` struct to manage accounts.json
   - CRUD operations for accounts
-  - Persist to `~/.config/sigilforge/accounts.toml`
+  - Persist to `~/.config/sigilforge/accounts.json`
 
-- [ ] Build CLI commands:
+- [x] Build CLI commands:
   - `sigilforge add-account <service> <account>` - Add account (prompts for API key)
   - `sigilforge list-accounts` - List all accounts
   - `sigilforge get-token <service> <account>` - Retrieve token/key
   - `sigilforge remove-account <service> <account>` - Delete account
 
-- [ ] Add configuration loading:
+- [x] Add configuration loading:
   - `Config` struct with serde
   - Load from `~/.config/sigilforge/config.toml`
   - Defaults for missing config
 
-- [ ] Add mock token provider:
+- [x] Add mock token provider:
   - Return static tokens for testing
   - Simulate token expiry
 
@@ -87,33 +107,36 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 2: Real OAuth Flows
 
+**Status:** COMPLETE
+
 **Goal**: Working OAuth2 authentication for initial providers.
 
 ### Tasks
 
-- [ ] Implement OAuth2 flow infrastructure:
+- [x] Implement OAuth2 flow infrastructure:
   - `OAuthFlow` trait for different flow types
   - Auth code + PKCE flow implementation
   - Device code flow implementation
   - Local callback server for auth code flow
 
-- [ ] Add provider configurations:
+- [x] Add provider configurations:
   - `ProviderConfig` struct with endpoints, scopes
   - Built-in configs for:
     - GitHub (device code)
     - Spotify (auth code + PKCE)
+    - Google (auth code + PKCE)
 
-- [ ] Implement token refresh:
+- [x] Implement token refresh:
   - `TokenManager::ensure_access_token()` implementation
   - Automatic refresh before expiry
   - Store updated tokens
 
-- [ ] Update CLI for OAuth:
+- [x] Update CLI for OAuth:
   - `add-account` starts OAuth flow for configured providers
   - Progress output during flow
   - Error handling for user cancellation
 
-- [ ] Add error types:
+- [x] Add error types:
   - `AuthError` enum for auth failures
   - `StoreError` enum for storage failures
   - Proper error propagation
@@ -129,47 +152,51 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 3: Daemon & Socket API
 
+**Status:** ~80% Complete
+
 **Goal**: Background service with local API for client applications.
 
 ### Tasks
 
-- [ ] Implement daemon core:
+- [x] Implement daemon core:
   - Async runtime setup (tokio)
   - Signal handling (SIGTERM, SIGINT)
   - PID file management
   - Logging to file
 
-- [ ] Implement socket server:
+- [x] Implement socket server:
   - Unix socket on Linux/macOS
   - Named pipe on Windows
   - JSON-RPC 2.0 protocol
   - Connection handling
 
-- [ ] Implement API handlers:
-  - `get_token` - return valid access token
+- [x] Implement API handlers:
+  - `get_token` - **STUB** (see issue #21)
   - `list_accounts` - return account list
   - `get_account` - return single account
   - `add_account` - initiate account setup
   - `remove_account` - delete account
   - `refresh_token` - force refresh
-  - `resolve` - resolve auth:// reference
+  - `resolve` - **STUB** (see issue #22)
   - `status` - daemon health
 
-- [ ] Add daemon management to CLI:
+- [x] Add daemon management to CLI:
   - `sigilforge daemon start` - start daemon
   - `sigilforge daemon stop` - stop daemon
   - `sigilforge daemon status` - check status
   - Auto-start daemon if not running
 
-- [ ] Update CLI to use daemon:
+- [x] Update CLI to use daemon:
   - Connect to socket by default
   - Fall back to direct mode if daemon unavailable
   - `--direct` flag to bypass daemon
 
-- [ ] Add client library:
+- [x] Add client library:
   - `SigilforgeClient` struct for Rust consumers
   - Connect to daemon
   - Typed request/response
+
+**Note:** `get_token` and `resolve` RPC handlers currently return stub values. See issues #21 and #22 for wiring to actual implementations.
 
 ### Deliverables
 
@@ -182,11 +209,13 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 4: Reference Resolution & Encrypted Storage
 
+**Status:** ~20% Complete
+
 **Goal**: Full reference resolution and ROPS/SOPS integration.
 
 ### Tasks
 
-- [ ] Implement auth:// URI resolution:
+- [x] Implement auth:// URI resolution:
   - Parse `auth://service/account/token` format
   - Parse `auth://service/account/api_key` format
   - `ReferenceResolver::resolve()` implementation
@@ -222,6 +251,8 @@ This document outlines the development phases for Sigilforge, from initial scaff
 ---
 
 ## Phase 5: Additional Providers & Polish
+
+**Status:** Not Started
 
 **Goal**: Broad provider support and production hardening.
 

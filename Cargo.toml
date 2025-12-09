@@ -67,3 +67,9 @@ jsonrpsee = { version = "0.24", features = ["server", "client", "macros"] }
 
 # Testing
 tempfile = "3.13"
+
+# Synchronization primitives
+parking_lot = "0.12"
+
+# Memory zeroing for secrets
+zeroize = { version = "1.8", features = ["zeroize_derive"] }

@@ -28,6 +28,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 mod memory;
 #[cfg(feature = "keyring-store")]
@@ -41,7 +42,8 @@ pub use keyring::KeyringStore;
 ///
 /// The inner value is only accessible via [`expose()`](Secret::expose).
 /// Debug and Display implementations show `[REDACTED]` instead of the value.
-#[derive(Clone, Serialize, Deserialize)]
+/// Memory is automatically zeroed when the secret is dropped.
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct Secret(String);
 
 impl Secret {
@@ -58,8 +60,9 @@ impl Secret {
     }
 
     /// Consume the secret and return the inner value.
+    /// Note: The returned string is cloned before the Secret is zeroed on drop.
     pub fn into_inner(self) -> String {
-        self.0
+        self.0.clone()
     }
 }
 

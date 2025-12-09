@@ -24,10 +24,11 @@
 //! ```
 
 use crate::model::{Account, AccountId, ServiceId};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Error type for account store operations.
@@ -52,10 +53,6 @@ pub enum AccountStoreError {
     /// Configuration directory not available.
     #[error("configuration directory not available")]
     ConfigDirUnavailable,
-
-    /// Internal lock poisoning error.
-    #[error("internal lock error: {message}")]
-    LockError { message: String },
 }
 
 /// Internal storage format for accounts.
@@ -140,13 +137,9 @@ impl AccountStore {
 
     /// Save the current state to disk.
     fn save(&self) -> Result<(), AccountStoreError> {
-        let data = self.data.read().map_err(|e| AccountStoreError::LockError {
-            message: format!("read lock poisoned: {}", e),
-        })?;
-
+        let data = self.data.read();
         let contents = serde_json::to_string_pretty(&*data)?;
         fs::write(&self.path, contents)?;
-
         Ok(())
     }
 
@@ -154,9 +147,7 @@ impl AccountStore {
     ///
     /// Returns an error if an account with the same service/id already exists.
     pub fn add_account(&self, account: Account) -> Result<(), AccountStoreError> {
-        let mut data = self.data.write().map_err(|e| AccountStoreError::LockError {
-            message: format!("write lock poisoned: {}", e),
-        })?;
+        let mut data = self.data.write();
 
         // Check for duplicates
         if data
@@ -184,10 +175,7 @@ impl AccountStore {
         service: &ServiceId,
         account: &AccountId,
     ) -> Result<Option<Account>, AccountStoreError> {
-        let data = self.data.read().map_err(|e| AccountStoreError::LockError {
-            message: format!("read lock poisoned: {}", e),
-        })?;
-
+        let data = self.data.read();
         Ok(data
             .accounts
             .iter()
@@ -203,9 +191,7 @@ impl AccountStore {
         &self,
         service_filter: Option<&ServiceId>,
     ) -> Result<Vec<Account>, AccountStoreError> {
-        let data = self.data.read().map_err(|e| AccountStoreError::LockError {
-            message: format!("read lock poisoned: {}", e),
-        })?;
+        let data = self.data.read();
 
         let accounts = if let Some(service) = service_filter {
             data.accounts
@@ -228,9 +214,7 @@ impl AccountStore {
         service: &ServiceId,
         account: &AccountId,
     ) -> Result<(), AccountStoreError> {
-        let mut data = self.data.write().map_err(|e| AccountStoreError::LockError {
-            message: format!("write lock poisoned: {}", e),
-        })?;
+        let mut data = self.data.write();
 
         let initial_len = data.accounts.len();
         data.accounts
@@ -256,9 +240,7 @@ impl AccountStore {
         service: &ServiceId,
         account: &AccountId,
     ) -> Result<(), AccountStoreError> {
-        let mut data = self.data.write().map_err(|e| AccountStoreError::LockError {
-            message: format!("write lock poisoned: {}", e),
-        })?;
+        let mut data = self.data.write();
 
         let account_entry = data
             .accounts

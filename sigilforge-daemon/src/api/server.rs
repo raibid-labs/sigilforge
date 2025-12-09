@@ -6,12 +6,15 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// Maximum request size (1MB) to prevent memory exhaustion attacks
 const MAX_REQUEST_SIZE: usize = 1_048_576;
+
+/// Maximum concurrent connections to prevent resource exhaustion
+const MAX_CONNECTIONS: usize = 100;
 
 /// Handle to a running RPC server
 pub struct ServerHandle {
@@ -56,6 +59,9 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
     // Create the RPC API implementation
     let api = Arc::new(SigilforgeApiImpl::new(state));
 
+    // Create a semaphore to limit concurrent connections
+    let semaphore = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+
     // Create a cancellation token
     let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
     let handle_tx = tx.clone();
@@ -72,11 +78,21 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
                     match result {
                         Ok((stream, _addr)) => {
                             let api = api.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, api).await {
-                                    warn!("Connection handler error: {}", e);
+                            let permit = semaphore.clone().try_acquire_owned();
+                            match permit {
+                                Ok(permit) => {
+                                    tokio::spawn(async move {
+                                        let _permit = permit; // Held for connection lifetime
+                                        if let Err(e) = handle_connection(stream, api).await {
+                                            warn!("Connection handler error: {}", e);
+                                        }
+                                    });
                                 }
-                            });
+                                Err(_) => {
+                                    warn!("Connection limit reached, rejecting connection");
+                                    // Connection will be dropped
+                                }
+                            }
                         }
                         Err(e) => {
                             warn!("Failed to accept connection: {}", e);
@@ -103,6 +119,20 @@ async fn handle_connection(
     mut stream: UnixStream,
     api: Arc<SigilforgeApiImpl>,
 ) -> Result<()> {
+    // Verify peer credentials on Unix (security check)
+    #[cfg(unix)]
+    {
+        let peer_cred = stream.peer_cred()?;
+        let my_uid = unsafe { libc::getuid() };
+        if peer_cred.uid() != my_uid {
+            anyhow::bail!(
+                "Connection from unauthorized user (UID {} != {})",
+                peer_cred.uid(),
+                my_uid
+            );
+        }
+    }
+
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();

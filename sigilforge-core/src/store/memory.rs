@@ -1,8 +1,8 @@
 //! In-memory secret storage implementation.
 
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 use super::{Secret, SecretStore, StoreError};
 
@@ -42,7 +42,7 @@ impl Default for MemoryStore {
 
 impl std::fmt::Debug for MemoryStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let count = self.data.read().map(|d| d.len()).unwrap_or(0);
+        let count = self.data.read().len();
         f.debug_struct("MemoryStore")
             .field("keys_count", &count)
             .finish()
@@ -52,32 +52,24 @@ impl std::fmt::Debug for MemoryStore {
 #[async_trait]
 impl SecretStore for MemoryStore {
     async fn get(&self, key: &str) -> Result<Option<Secret>, StoreError> {
-        let data = self.data.read().map_err(|e| StoreError::BackendError {
-            message: format!("lock poisoned: {}", e),
-        })?;
+        let data = self.data.read();
         Ok(data.get(key).cloned())
     }
 
     async fn set(&self, key: &str, secret: &Secret) -> Result<(), StoreError> {
-        let mut data = self.data.write().map_err(|e| StoreError::BackendError {
-            message: format!("lock poisoned: {}", e),
-        })?;
+        let mut data = self.data.write();
         data.insert(key.to_string(), secret.clone());
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<(), StoreError> {
-        let mut data = self.data.write().map_err(|e| StoreError::BackendError {
-            message: format!("lock poisoned: {}", e),
-        })?;
+        let mut data = self.data.write();
         data.remove(key);
         Ok(())
     }
 
     async fn list_keys(&self, prefix: &str) -> Result<Vec<String>, StoreError> {
-        let data = self.data.read().map_err(|e| StoreError::BackendError {
-            message: format!("lock poisoned: {}", e),
-        })?;
+        let data = self.data.read();
         let keys: Vec<String> = data
             .keys()
             .filter(|k| k.starts_with(prefix))
