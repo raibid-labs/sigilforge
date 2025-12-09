@@ -256,6 +256,49 @@ mod tests {
         assert!(display.contains("REDACTED"));
     }
 
+    #[test]
+    fn test_secret_into_inner() {
+        let secret = Secret::new("my-value");
+        let inner = secret.into_inner();
+        assert_eq!(inner, "my-value");
+    }
+
+    #[test]
+    fn test_secret_equality() {
+        let s1 = Secret::new("same");
+        let s2 = Secret::new("same");
+        let s3 = Secret::new("different");
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+    }
+
+    #[tokio::test]
+    async fn test_box_dyn_secret_store() {
+        // Test that Box<dyn SecretStore> works correctly
+        let store: Box<dyn SecretStore> = Box::new(MemoryStore::new());
+
+        // Test set and get
+        let secret = Secret::new("boxed-secret");
+        store.set("boxed-key", &secret).await.unwrap();
+        let retrieved = store.get("boxed-key").await.unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().expose(), "boxed-secret");
+
+        // Test exists
+        assert!(store.exists("boxed-key").await.unwrap());
+        assert!(!store.exists("nonexistent").await.unwrap());
+
+        // Test list_keys
+        store.set("prefix/key1", &secret).await.unwrap();
+        store.set("prefix/key2", &secret).await.unwrap();
+        let keys = store.list_keys("prefix/").await.unwrap();
+        assert_eq!(keys.len(), 2);
+
+        // Test delete
+        store.delete("boxed-key").await.unwrap();
+        assert!(!store.exists("boxed-key").await.unwrap());
+    }
+
     #[tokio::test]
     async fn test_create_store_memory_fallback() {
         // This should always return a store, even if keyring is unavailable
@@ -305,5 +348,20 @@ mod tests {
                 let _ = store.delete(test_key).await;
             }
         }
+    }
+
+    #[test]
+    fn test_store_error_display() {
+        let err = StoreError::NotFound { key: "test-key".to_string() };
+        assert!(err.to_string().contains("not found"));
+
+        let err = StoreError::AccessDenied { key: "test-key".to_string() };
+        assert!(err.to_string().contains("denied"));
+
+        let err = StoreError::BackendError { message: "connection failed".to_string() };
+        assert!(err.to_string().contains("connection failed"));
+
+        let err = StoreError::KeyringUnavailable { message: "no keyring".to_string() };
+        assert!(err.to_string().contains("no keyring"));
     }
 }

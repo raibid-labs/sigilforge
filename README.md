@@ -87,6 +87,7 @@ sigilforge/
 ├── sigilforge-core/        # Core types, traits, and logic
 ├── sigilforge-daemon/      # Background service with local API
 ├── sigilforge-cli/         # CLI tool for humans
+├── sigilforge-client/      # Client library for Rust applications
 └── docs/
     ├── STRUCTURE.md        # Documentation organization guide
     ├── ARCHITECTURE.md     # System design and components
@@ -146,6 +147,21 @@ async fn get_spotify_token(manager: &impl TokenManager) -> Result<String, Error>
     let service = ServiceId::new("spotify");
     let account = AccountId::new("personal");
     manager.ensure_access_token(&service, &account).await
+}
+```
+
+### Via Client Library
+
+For Rust applications that want to communicate with the daemon:
+
+```rust
+use sigilforge_client::SigilforgeClient;
+
+async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    let client = SigilforgeClient::connect().await?;
+    let token = client.get_token("spotify", "personal").await?;
+    println!("Got token: {}", token.token);
+    Ok(())
 }
 ```
 

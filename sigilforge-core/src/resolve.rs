@@ -312,4 +312,95 @@ mod tests {
         let plain = ResolvedValue::Plain("value".to_string());
         assert!(!plain.is_secret());
     }
+
+    #[test]
+    fn test_resolver_config_default() {
+        let config = ResolverConfig::default();
+        assert!(config.enable_auth_scheme);
+        assert!(!config.enable_vals);
+    }
+
+    #[test]
+    fn test_resolve_error_display() {
+        let err = ResolveError::NotFound {
+            reference: "auth://test/test/token".to_string(),
+        };
+        assert!(err.to_string().contains("not found"));
+
+        let err = ResolveError::UnsupportedScheme {
+            scheme: "unknown".to_string(),
+        };
+        assert!(err.to_string().contains("unsupported"));
+
+        let err = ResolveError::InvalidFormat {
+            message: "bad format".to_string(),
+        };
+        assert!(err.to_string().contains("bad format"));
+    }
+}
+
+#[cfg(all(test, feature = "oauth"))]
+mod oauth_tests {
+    use super::*;
+    use crate::store::MemoryStore;
+    use crate::token_manager::DefaultTokenManager;
+    use crate::provider::ProviderRegistry;
+
+    #[tokio::test]
+    async fn test_default_resolver_invalid_format() {
+        let store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let providers = ProviderRegistry::new();
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        let resolver_store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
+
+        // Invalid format should return error
+        let result: Result<ResolvedValue, ResolveError> = resolver.resolve("not-a-valid-reference").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ResolveError::InvalidFormat { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_default_resolver_vals_disabled() {
+        let store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let providers = ProviderRegistry::new();
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        let resolver_store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
+
+        // vals: references should fail when disabled
+        let result: Result<ResolvedValue, ResolveError> = resolver.resolve("vals:ref+test").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ResolveError::UnsupportedScheme { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_default_resolver_supports_scheme() {
+        let store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let providers = ProviderRegistry::new();
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        let resolver_store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
+
+        assert!(resolver.supports_scheme("auth"));
+        assert!(!resolver.supports_scheme("vals"));
+        assert!(!resolver.supports_scheme("unknown"));
+    }
+
+    #[tokio::test]
+    async fn test_default_resolver_not_found() {
+        let store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let providers = ProviderRegistry::new();
+        let token_manager = DefaultTokenManager::new(store, providers);
+
+        let resolver_store: Box<dyn crate::store::SecretStore> = Box::new(MemoryStore::new());
+        let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
+
+        // Non-existent credential should return not found
+        let result: Result<ResolvedValue, ResolveError> = resolver.resolve("auth://test/account/api_key").await;
+        assert!(result.is_err());
+    }
 }
