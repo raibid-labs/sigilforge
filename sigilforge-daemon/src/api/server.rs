@@ -10,6 +10,9 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+/// Maximum request size (1MB) to prevent memory exhaustion attacks
+const MAX_REQUEST_SIZE: usize = 1_048_576;
+
 /// Handle to a running RPC server
 pub struct ServerHandle {
     shutdown: Arc<Mutex<Option<tokio::sync::mpsc::Sender<()>>>>,
@@ -27,12 +30,8 @@ pub struct ServerHandle {
 ///
 /// A handle to the running server that can be used to stop it.
 pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerHandle> {
-    // Remove existing socket if present
-    if socket_path.exists() {
-        warn!("Removing existing socket at {:?}", socket_path);
-        std::fs::remove_file(socket_path)
-            .with_context(|| format!("Failed to remove existing socket at {:?}", socket_path))?;
-    }
+    // Remove existing socket if present (ignore errors - may not exist)
+    let _ = std::fs::remove_file(socket_path);
 
     // Ensure parent directory exists
     if let Some(parent) = socket_path.parent() {
@@ -45,6 +44,14 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
     // Create Unix listener
     let listener = UnixListener::bind(socket_path)
         .with_context(|| format!("Failed to bind Unix socket at {:?}", socket_path))?;
+
+    // Set socket permissions to 0600 (owner read/write only) for security
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set socket permissions at {:?}", socket_path))?;
+    }
 
     // Create the RPC API implementation
     let api = Arc::new(SigilforgeApiImpl::new(state));
@@ -107,6 +114,22 @@ async fn handle_connection(
         if n == 0 {
             // Connection closed
             break;
+        }
+
+        // Check request size to prevent memory exhaustion
+        if line.len() > MAX_REQUEST_SIZE {
+            let error_response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Request too large"
+                },
+                "id": null
+            });
+            writer.write_all(error_response.to_string().as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
+            continue;
         }
 
         debug!("Received request: {}", line.trim());

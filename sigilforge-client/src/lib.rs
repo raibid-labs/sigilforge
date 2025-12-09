@@ -134,13 +134,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_with_env_fallback() {
-        std::env::set_var("SIGILFORGE_TEST_INTEGRATION_TOKEN", "integration-test-token");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("SIGILFORGE_TEST_INTEGRATION_TOKEN", "integration-test-token") };
 
         let client = SigilforgeClient::fallback_only(FallbackConfig::env_vars());
         let token = client.get_token("test", "integration").await.unwrap();
 
         assert_eq!(token.token, "integration-test-token");
 
-        std::env::remove_var("SIGILFORGE_TEST_INTEGRATION_TOKEN");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("SIGILFORGE_TEST_INTEGRATION_TOKEN") };
     }
 }

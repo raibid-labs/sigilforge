@@ -37,3 +37,6 @@ directories = { workspace = true }
 
 # JSON-RPC client
 jsonrpsee = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -121,6 +121,7 @@ async fn test_add_and_list_accounts() {
 
     // Start the server in the background with a temp account store
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-add-list.json");
+    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
     let store = AccountStore::load_from_path(store_path).unwrap();
     start_test_server(&socket_path, store).await;
 
@@ -189,6 +190,8 @@ async fn test_add_and_list_accounts() {
 
     // Cleanup
     let _ = std::fs::remove_file(&socket_path);
+    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-add-list.json");
+    let _ = std::fs::remove_file(&store_path);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -206,6 +209,7 @@ async fn test_get_token() {
 
     // Start the server in the background with a temp account store
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-token.json");
+    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
     let store = AccountStore::load_from_path(store_path).unwrap();
     start_test_server(&socket_path, store).await;
 
@@ -243,6 +247,8 @@ async fn test_get_token() {
 
     // Cleanup
     let _ = std::fs::remove_file(&socket_path);
+    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-token.json");
+    let _ = std::fs::remove_file(&store_path);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -260,6 +266,7 @@ async fn test_resolve() {
 
     // Start the server in the background with a temp account store
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-resolve.json");
+    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
     let store = AccountStore::load_from_path(store_path).unwrap();
     start_test_server(&socket_path, store).await;
 
@@ -305,6 +312,8 @@ async fn test_resolve() {
 
     // Cleanup
     let _ = std::fs::remove_file(&socket_path);
+    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-resolve.json");
+    let _ = std::fs::remove_file(&store_path);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -322,6 +331,7 @@ async fn test_error_handling() {
 
     // Start the server in the background with a temp account store
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-errors.json");
+    let _ = std::fs::remove_file(&store_path); // Clean up any existing store
     let store = AccountStore::load_from_path(store_path).unwrap();
     start_test_server(&socket_path, store).await;
 
@@ -366,4 +376,6 @@ async fn test_error_handling() {
 
     // Cleanup
     let _ = std::fs::remove_file(&socket_path);
+    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-errors.json");
+    let _ = std::fs::remove_file(&store_path);
 }

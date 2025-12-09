@@ -1,0 +1,30 @@
+# Pre-commit hooks for Sigilforge
+#
+# This configuration runs formatting and linting checks before each commit.
+#
+# Setup:
+#   1. Install pre-commit: pip install pre-commit
+#   2. Install hooks: pre-commit install
+#   3. (Optional) Run manually: pre-commit run --all-files
+#
+# The hooks will run automatically on `git commit`. If any hook fails,
+# the commit will be blocked until the issues are fixed.
+#
+# To run the same checks manually without committing:
+#   just check-all
+
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false

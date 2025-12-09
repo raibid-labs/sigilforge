@@ -23,7 +23,7 @@ use sigilforge_core::{
     AccountId, CredentialType, ServiceId,
 };
 use tracing::{info, warn};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{fmt, EnvFilter};
 
 mod client;
 
@@ -102,11 +102,7 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if cli.verbose {
-        FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .init();
-    }
+    init_logging(cli.verbose);
 
     match cli.command {
         Commands::AddAccount { service, account, scopes } => {
@@ -128,6 +124,17 @@ async fn main() -> Result<()> {
             run_daemon_foreground().await
         }
     }
+}
+
+fn init_logging(verbose: bool) {
+    let default_level = if verbose { "debug" } else { "info" };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(default_level));
+
+    fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
 }
 
 async fn add_account(service: &str, account: &str, scopes: Option<&str>) -> Result<()> {

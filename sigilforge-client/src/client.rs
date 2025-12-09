@@ -339,7 +339,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fallback_only_client() {
-        std::env::set_var("SIGILFORGE_TEST_FALLBACK_TOKEN", "fallback-token");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("SIGILFORGE_TEST_FALLBACK_TOKEN", "fallback-token") };
 
         let client = SigilforgeClient::fallback_only(FallbackConfig::env_vars());
         let token = client.get_token("test", "fallback").await.unwrap();
@@ -347,19 +348,22 @@ mod tests {
         assert_eq!(token.token, "fallback-token");
         assert_eq!(token.token_type, "Bearer");
 
-        std::env::remove_var("SIGILFORGE_TEST_FALLBACK_TOKEN");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("SIGILFORGE_TEST_FALLBACK_TOKEN") };
     }
 
     #[tokio::test]
     async fn test_resolve_with_fallback() {
-        std::env::set_var("SIGILFORGE_CLIENTTEST_RESOLVE_API_KEY", "sk-test-123");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("SIGILFORGE_CLIENTTEST_RESOLVE_API_KEY", "sk-test-123") };
 
         let client = SigilforgeClient::fallback_only(FallbackConfig::env_vars());
         let result = client.resolve("auth://clienttest/resolve/api_key").await.unwrap();
 
         assert_eq!(result.value, "sk-test-123");
 
-        std::env::remove_var("SIGILFORGE_CLIENTTEST_RESOLVE_API_KEY");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("SIGILFORGE_CLIENTTEST_RESOLVE_API_KEY") };
     }
 
     #[tokio::test]

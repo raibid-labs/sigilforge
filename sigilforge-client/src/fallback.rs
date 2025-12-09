@@ -238,7 +238,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_env_var_fallback() {
-        std::env::set_var("SIGILFORGE_TEST_DEV_TOKEN", "test-token-123");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("SIGILFORGE_TEST_DEV_TOKEN", "test-token-123") };
 
         let resolver = FallbackResolver::new(FallbackConfig::env_vars());
         let token = resolver.get_token("test", "dev").await.unwrap();
@@ -246,31 +247,36 @@ mod tests {
         assert_eq!(token.token, "test-token-123");
         assert_eq!(token.token_type, "Bearer");
 
-        std::env::remove_var("SIGILFORGE_TEST_DEV_TOKEN");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("SIGILFORGE_TEST_DEV_TOKEN") };
     }
 
     #[tokio::test]
     async fn test_env_var_api_key() {
-        std::env::set_var("SIGILFORGE_OPENAI_DEFAULT_API_KEY", "sk-test-key");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("SIGILFORGE_OPENAI_DEFAULT_API_KEY", "sk-test-key") };
 
         let resolver = FallbackResolver::new(FallbackConfig::env_vars());
         let result = resolver.resolve("auth://openai/default/api_key").await.unwrap();
 
         assert_eq!(result.value, "sk-test-key");
 
-        std::env::remove_var("SIGILFORGE_OPENAI_DEFAULT_API_KEY");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("SIGILFORGE_OPENAI_DEFAULT_API_KEY") };
     }
 
     #[tokio::test]
     async fn test_custom_prefix() {
-        std::env::set_var("MYAPP_SPOTIFY_PERSONAL_TOKEN", "custom-token");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("MYAPP_SPOTIFY_PERSONAL_TOKEN", "custom-token") };
 
         let resolver = FallbackResolver::new(FallbackConfig::env_vars_with_prefix("MYAPP"));
         let token = resolver.get_token("spotify", "personal").await.unwrap();
 
         assert_eq!(token.token, "custom-token");
 
-        std::env::remove_var("MYAPP_SPOTIFY_PERSONAL_TOKEN");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("MYAPP_SPOTIFY_PERSONAL_TOKEN") };
     }
 
     #[tokio::test]
@@ -283,8 +289,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chain_fallback() {
-        // Set up second env var (first one won't exist)
-        std::env::set_var("BACKUP_GITHUB_OSS_API_KEY", "backup-key");
+        // SAFETY: Test-only env var manipulation, no concurrent access
+        unsafe { std::env::set_var("BACKUP_GITHUB_OSS_API_KEY", "backup-key") };
 
         let resolver = FallbackResolver::new(FallbackConfig::chain(vec![
             FallbackConfig::env_vars_with_prefix("PRIMARY"),  // won't have the var
@@ -294,6 +300,7 @@ mod tests {
         let result = resolver.resolve("auth://github/oss/api_key").await.unwrap();
         assert_eq!(result.value, "backup-key");
 
-        std::env::remove_var("BACKUP_GITHUB_OSS_API_KEY");
+        // SAFETY: Test-only env var manipulation
+        unsafe { std::env::remove_var("BACKUP_GITHUB_OSS_API_KEY") };
     }
 }

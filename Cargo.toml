@@ -64,3 +64,6 @@ async-trait = "0.1"
 
 # JSON-RPC
 jsonrpsee = { version = "0.24", features = ["server", "client", "macros"] }
+
+# Testing
+tempfile = "3.13"
