@@ -2071,6 +2071,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigilforge-client"
+version = "0.1.3"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "directories",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "sigilforge-core"
 version = "0.2.0"
 dependencies = [

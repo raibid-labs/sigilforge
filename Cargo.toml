@@ -4,6 +4,7 @@ members = [
     "sigilforge-core",
     "sigilforge-daemon",
     "sigilforge-cli",
+    "sigilforge-client",
 ]
 
 [workspace.package]
