@@ -207,6 +207,13 @@ jobs:
       - name: Wait for crates.io index update
         run: sleep 30
 
+      - name: Publish sigilforge-client
+        run: cargo publish -p sigilforge-client --token ${{ secrets.CARGO_TOKEN }} --allow-dirty
+        continue-on-error: true
+
+      - name: Wait for crates.io index update
+        run: sleep 30
+
       - name: Publish sigilforge-cli
         run: cargo publish -p sigilforge-cli --token ${{ secrets.CARGO_TOKEN }}
         continue-on-error: true
