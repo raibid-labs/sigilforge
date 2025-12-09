@@ -12,6 +12,24 @@ use tokio::net::UnixStream;
 use tokio::time::{sleep, Duration};
 
 use sigilforge_core::account_store::AccountStore;
+use sigilforge_daemon::api::{start_server, ApiState};
+
+/// Helper to start a test server that stays alive for the duration of the test
+async fn start_test_server(socket_path: &std::path::Path, store: AccountStore) {
+    let socket_path = socket_path.to_path_buf();
+    tokio::spawn(async move {
+        let state = ApiState::with_store(store);
+        match start_server(&socket_path, state).await {
+            Ok(handle) => {
+                // Keep the handle alive to prevent server shutdown
+                std::mem::forget(handle);
+            }
+            Err(e) => {
+                eprintln!("Server start failed: {}", e);
+            }
+        }
+    });
+}
 
 /// Response containing a fresh access token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +106,7 @@ async fn send_rpc_request<T: for<'de> Deserialize<'de>>(
     Ok(serde_json::from_value(result.clone())?)
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_add_and_list_accounts() {
     if !can_bind_unix_socket() {
         eprintln!("Skipping test_add_and_list_accounts: Unix sockets not permitted in sandbox");
@@ -102,19 +120,12 @@ async fn test_add_and_list_accounts() {
     let _ = std::fs::remove_file(&socket_path);
 
     // Start the server in the background with a temp account store
-    let socket_path_clone = socket_path.clone();
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-add-list.json");
     let store = AccountStore::load_from_path(store_path).unwrap();
-    tokio::spawn(async move {
-        use sigilforge_daemon::api::{start_server, ApiState};
-        let state = ApiState::with_store(store);
-        if let Err(e) = start_server(&socket_path_clone, state).await {
-            eprintln!("Server start failed: {}", e);
-        }
-    });
+    start_test_server(&socket_path, store).await;
 
     // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(1000)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Verify socket exists
     if !socket_path.exists() {
@@ -180,7 +191,7 @@ async fn test_add_and_list_accounts() {
     let _ = std::fs::remove_file(&socket_path);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_get_token() {
     if !can_bind_unix_socket() {
         eprintln!("Skipping test_get_token: Unix sockets not permitted in sandbox");
@@ -194,19 +205,12 @@ async fn test_get_token() {
     let _ = std::fs::remove_file(&socket_path);
 
     // Start the server in the background with a temp account store
-    let socket_path_clone = socket_path.clone();
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-token.json");
     let store = AccountStore::load_from_path(store_path).unwrap();
-    tokio::spawn(async move {
-        use sigilforge_daemon::api::{start_server, ApiState};
-        let state = ApiState::with_store(store);
-        if let Err(e) = start_server(&socket_path_clone, state).await {
-            eprintln!("Server start failed: {}", e);
-        }
-    });
+    start_test_server(&socket_path, store).await;
 
     // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(1000)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Verify socket exists
     if !socket_path.exists() {
@@ -241,7 +245,7 @@ async fn test_get_token() {
     let _ = std::fs::remove_file(&socket_path);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_resolve() {
     if !can_bind_unix_socket() {
         eprintln!("Skipping test_resolve: Unix sockets not permitted in sandbox");
@@ -255,19 +259,12 @@ async fn test_resolve() {
     let _ = std::fs::remove_file(&socket_path);
 
     // Start the server in the background with a temp account store
-    let socket_path_clone = socket_path.clone();
     let store_path = std::env::temp_dir().join("sigilforge-test-accounts-resolve.json");
     let store = AccountStore::load_from_path(store_path).unwrap();
-    tokio::spawn(async move {
-        use sigilforge_daemon::api::{start_server, ApiState};
-        let state = ApiState::with_store(store);
-        if let Err(e) = start_server(&socket_path_clone, state).await {
-            eprintln!("Server start failed: {}", e);
-        }
-    });
+    start_test_server(&socket_path, store).await;
 
     // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(1000)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Verify socket exists
     if !socket_path.exists() {
@@ -310,7 +307,7 @@ async fn test_resolve() {
     let _ = std::fs::remove_file(&socket_path);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_error_handling() {
     if !can_bind_unix_socket() {
         eprintln!("Skipping test_error_handling: Unix sockets not permitted in sandbox");
@@ -323,21 +320,13 @@ async fn test_error_handling() {
     // Remove socket if it exists
     let _ = std::fs::remove_file(&socket_path);
 
-    // Start the server in the background
-    let socket_path_clone = socket_path.clone();
-    tokio::spawn(async move {
-        use sigilforge_daemon::api::{start_server, ApiState};
-        if let Ok(state) = ApiState::new() {
-            if let Err(e) = start_server(&socket_path_clone, state).await {
-                eprintln!("Server start failed: {}", e);
-            }
-        } else {
-            eprintln!("ApiState init failed");
-        }
-    });
+    // Start the server in the background with a temp account store
+    let store_path = std::env::temp_dir().join("sigilforge-test-accounts-errors.json");
+    let store = AccountStore::load_from_path(store_path).unwrap();
+    start_test_server(&socket_path, store).await;
 
     // Give the server time to start and begin accepting connections
-    sleep(Duration::from_millis(1000)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Verify socket exists
     if !socket_path.exists() {
