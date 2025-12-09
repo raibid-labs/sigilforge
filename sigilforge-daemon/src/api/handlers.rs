@@ -1,36 +1,47 @@
 //! JSON-RPC API handlers for the daemon.
 
 use super::types::{
-    AccountInfo, AddAccountRequest, AddAccountResponse, GetTokenRequest, GetTokenResponse,
-    ListAccountsRequest, ListAccountsResponse, ResolveRequest, ResolveResponse,
+    AccountInfo, AddAccountResponse, GetTokenResponse, ListAccountsResponse, ResolveResponse,
 };
 use anyhow::Result;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::{ErrorCode, ErrorObject};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{debug, info};
 
+use sigilforge_core::{
+    account_store::AccountStore,
+    model::{Account, AccountId, ServiceId},
+};
+use std::sync::Arc;
+
 /// State shared across RPC handlers.
-#[derive(Clone)]
 pub struct ApiState {
-    /// In-memory storage for accounts (temporary implementation)
-    pub accounts: Arc<RwLock<Vec<AccountInfo>>>,
+    /// Persistent account store
+    pub accounts: Arc<AccountStore>,
 }
 
 impl ApiState {
     /// Create a new API state.
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
+        let accounts = AccountStore::load()?;
+        Ok(Self {
+            accounts: Arc::new(accounts),
+        })
+    }
+
+    /// Create API state with a provided account store (useful for tests).
+    #[allow(dead_code)]
+    pub fn with_store(accounts: AccountStore) -> Self {
         Self {
-            accounts: Arc::new(RwLock::new(Vec::new())),
+            accounts: Arc::new(accounts),
         }
     }
 }
 
 impl Default for ApiState {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("failed to load AccountStore")
     }
 }
 
@@ -112,18 +123,28 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
         info!("RPC: get_token({}/{})", service, account);
 
         // Check if account exists
-        let accounts = self.state.accounts.read().await;
-        let account_exists = accounts
-            .iter()
-            .any(|a| a.service == service && a.account == account);
-
-        if !account_exists {
+        let service_id = ServiceId::new(&service);
+        let account_id = AccountId::new(&account);
+        if self
+            .state
+            .accounts
+            .get_account(&service_id, &account_id)
+            .map_err(internal_error)?
+            .is_none()
+        {
             return Err(ErrorObject::owned(
                 ErrorCode::InvalidParams.code(),
                 format!("Account {}/{} not found", service, account),
                 None::<()>,
             ));
         }
+
+        // Update last_used timestamp
+        let _ = self
+            .state
+            .accounts
+            .update_last_used(&service_id, &account_id)
+            .map_err(internal_error);
 
         // TODO: Integrate with actual token manager
         // For now, return a stub token
@@ -136,11 +157,22 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
     async fn list_accounts(&self, service: Option<String>) -> RpcResult<ListAccountsResponse> {
         debug!("RPC: list_accounts(service: {:?})", service);
 
-        let accounts = self.state.accounts.read().await;
+        let service_filter = service.as_ref().map(ServiceId::new);
+        let accounts = self
+            .state
+            .accounts
+            .list_accounts(service_filter.as_ref())
+            .map_err(internal_error)?;
+
         let filtered: Vec<AccountInfo> = accounts
-            .iter()
-            .filter(|a| service.as_ref().map_or(true, |s| a.service == *s))
-            .cloned()
+            .into_iter()
+            .map(|a| AccountInfo {
+                service: a.service.to_string(),
+                account: a.id.to_string(),
+                scopes: a.scopes,
+                created_at: a.created_at.to_rfc3339(),
+                last_used: a.last_used.map(|dt| dt.to_rfc3339()),
+            })
             .collect();
 
         Ok(ListAccountsResponse {
@@ -156,30 +188,24 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
     ) -> RpcResult<AddAccountResponse> {
         info!("RPC: add_account({}/{}, scopes: {:?})", service, account, scopes);
 
-        // Check for duplicates
-        let mut accounts = self.state.accounts.write().await;
-        if accounts
-            .iter()
-            .any(|a| a.service == service && a.account == account)
-        {
-            return Err(ErrorObject::owned(
-                ErrorCode::InvalidParams.code(),
-                format!("Account {}/{} already exists", service, account),
-                None::<()>,
-            ));
-        }
-
-        // Add the account
-        let now = chrono::Utc::now();
-        let new_account = AccountInfo {
-            service: service.clone(),
-            account: account.clone(),
+        let new_account = Account::new(
+            ServiceId::new(&service),
+            AccountId::new(&account),
             scopes,
-            created_at: now.to_rfc3339(),
-            last_used: None,
-        };
+        );
 
-        accounts.push(new_account);
+        if let Err(e) = self.state.accounts.add_account(new_account) {
+            return Err(match e {
+                sigilforge_core::account_store::AccountStoreError::AlreadyExists { .. } => {
+                    ErrorObject::owned(
+                        ErrorCode::InvalidParams.code(),
+                        format!("Account {}/{} already exists", service, account),
+                        None::<()>,
+                    )
+                }
+                other => internal_error(other),
+            });
+        }
 
         Ok(AddAccountResponse {
             message: format!("Account {}/{} added successfully", service, account),
@@ -200,10 +226,12 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
         })?;
 
         // Check if account exists
-        let accounts = self.state.accounts.read().await;
-        let account_exists = accounts.iter().any(|a| {
-            a.service == cred_ref.service.as_str() && a.account == cred_ref.account.as_str()
-        });
+        let account_exists = self
+            .state
+            .accounts
+            .get_account(&cred_ref.service, &cred_ref.account)
+            .map_err(internal_error)?
+            .is_some();
 
         if !account_exists {
             return Err(ErrorObject::owned(
@@ -222,4 +250,12 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
             ),
         })
     }
+}
+
+fn internal_error<E: std::fmt::Display>(err: E) -> ErrorObject<'static> {
+    ErrorObject::owned(
+        ErrorCode::InternalError.code(),
+        format!("{}", err),
+        None::<()>,
+    )
 }

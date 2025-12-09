@@ -3,7 +3,7 @@
 //! This module provides a client for connecting to the Sigilforge daemon
 //! over a Unix socket (or named pipe on Windows) using JSON-RPC.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -50,6 +50,7 @@ pub struct ResolveResponse {
 /// Client for communicating with the Sigilforge daemon.
 pub struct DaemonClient {
     stream: Option<UnixStream>,
+    #[allow(dead_code)]
     socket_path: PathBuf,
     next_id: u64,
 }

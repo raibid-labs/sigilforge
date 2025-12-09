@@ -7,11 +7,13 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// Handle to a running RPC server
 pub struct ServerHandle {
     shutdown: Arc<Mutex<Option<tokio::sync::mpsc::Sender<()>>>>,
+    join_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Start the JSON-RPC server on a Unix socket.
@@ -52,7 +54,7 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
     let handle_tx = tx.clone();
 
     // Spawn server task
-    tokio::spawn(async move {
+    let server_task: JoinHandle<()> = tokio::spawn(async move {
         loop {
             tokio::select! {
                 _ = rx.recv() => {
@@ -83,6 +85,7 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
     // Create a server handle
     let handle = ServerHandle {
         shutdown: Arc::new(Mutex::new(Some(handle_tx))),
+        join_handle: Arc::new(Mutex::new(Some(server_task))),
     };
 
     Ok(handle)
@@ -239,7 +242,7 @@ async fn process_request(
             "id": id
         }),
         Err(error) => serde_json::json!({
-            "jsonrpsee": "2.0",
+            "jsonrpc": "2.0",
             "error": {
                 "code": error.code(),
                 "message": error.message()
@@ -251,25 +254,27 @@ async fn process_request(
 
 impl ServerHandle {
     /// Stop the server
-    pub fn stop(&self) -> Result<()> {
-        // We'll use blocking wait since the main.rs expects a synchronous API
-        let runtime = tokio::runtime::Handle::current();
-        runtime.block_on(async {
-            if let Some(tx) = self.shutdown.lock().await.take() {
-                let _ = tx.send(()).await;
-            }
-        });
+    pub async fn stop(&self) -> Result<()> {
+        if let Some(tx) = self.shutdown.lock().await.take() {
+            let _ = tx.send(()).await;
+        }
+
+        if let Some(handle) = self.join_handle.lock().await.take() {
+            // If the task panicked, surface the error
+            handle.await?;
+        }
+
         Ok(())
     }
 
     /// Wait for the server to stop
     pub async fn stopped(&self) {
-        // In a real implementation, we'd wait for the server task to finish
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // No-op: stop() already awaits the join handle.
     }
 }
 
 /// Configuration for the JSON-RPC server.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     /// Path to the Unix socket
@@ -278,6 +283,7 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     /// Create a new server configuration.
+    #[allow(dead_code)]
     pub fn new(socket_path: impl Into<std::path::PathBuf>) -> Self {
         Self {
             socket_path: socket_path.into(),
