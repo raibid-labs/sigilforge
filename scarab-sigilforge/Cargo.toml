@@ -1,0 +1,28 @@
+[package]
+name = "scarab-sigilforge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Scarab plugin API
+scarab-plugin-api = { path = "../../scarab/crates/scarab-plugin-api" }
+
+# Sigilforge core
+sigilforge-core = { workspace = true, features = ["oauth", "keyring-store"] }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
