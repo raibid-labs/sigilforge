@@ -42,6 +42,24 @@ pub struct ListAccountsResponse {
 pub struct ResolveResponse {
     pub value: String,
 }
+
+/// Status of a single account (for status bar plugins)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountStatusInfo {
+    pub service: String,
+    pub account: String,
+    pub token_valid: bool,
+    pub expires_soon: bool,
+    pub expires_at: Option<String>,
+}
+
+/// Response for accounts_status RPC method
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountsStatusResponse {
+    pub accounts: Vec<AccountStatusInfo>,
+    pub all_valid: bool,
+    pub any_expiring_soon: bool,
+}
 use anyhow::Result;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
@@ -179,6 +197,17 @@ pub trait SigilforgeApi {
     /// The resolved credential value.
     #[method(name = "resolve")]
     async fn resolve(&self, reference: String) -> RpcResult<ResolveResponse>;
+
+    /// Get status of all accounts (for status bar plugins).
+    ///
+    /// Returns token validity and expiry information for each account.
+    /// Tokens expiring within 24 hours are marked as "expires_soon".
+    ///
+    /// # Returns
+    ///
+    /// Status information for all accounts.
+    #[method(name = "accounts_status")]
+    async fn accounts_status(&self) -> RpcResult<AccountsStatusResponse>;
 }
 
 /// Implementation of the Sigilforge API.
@@ -345,6 +374,65 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
                 None::<()>,
             )),
         }
+    }
+
+    async fn accounts_status(&self) -> RpcResult<AccountsStatusResponse> {
+        debug!("RPC: accounts_status()");
+
+        let accounts = self
+            .state
+            .accounts
+            .list_accounts(None)
+            .map_err(internal_error)?;
+
+        let now = chrono::Utc::now();
+        let expiry_threshold = chrono::Duration::hours(24);
+
+        let mut status_list = Vec::new();
+        let mut all_valid = true;
+        let mut any_expiring_soon = false;
+
+        for account in accounts {
+            // Try to get token status for this account
+            let (token_valid, expires_soon, expires_at) = match self
+                .state
+                .token_manager
+                .ensure_access_token(&account.service, &account.id)
+                .await
+            {
+                Ok(token) => {
+                    let expires_soon = token.expires_at.map_or(false, |exp| {
+                        exp.signed_duration_since(now) < expiry_threshold
+                    });
+                    (true, expires_soon, token.expires_at.map(|dt| dt.to_rfc3339()))
+                }
+                Err(_) => {
+                    // Token retrieval failed - mark as invalid
+                    (false, false, None)
+                }
+            };
+
+            if !token_valid {
+                all_valid = false;
+            }
+            if expires_soon {
+                any_expiring_soon = true;
+            }
+
+            status_list.push(AccountStatusInfo {
+                service: account.service.to_string(),
+                account: account.id.to_string(),
+                token_valid,
+                expires_soon,
+                expires_at,
+            });
+        }
+
+        Ok(AccountsStatusResponse {
+            accounts: status_list,
+            all_valid,
+            any_expiring_soon,
+        })
     }
 }
 

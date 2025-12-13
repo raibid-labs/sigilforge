@@ -285,6 +285,12 @@ async fn process_request(
                 Err(ErrorObject::owned(-32602, "Invalid params", None::<()>))
             }
         }
+        "accounts_status" => {
+            match api.accounts_status().await {
+                Ok(resp) => Ok(serde_json::to_value(resp).unwrap()),
+                Err(e) => Err(e),
+            }
+        }
         _ => Err(ErrorObject::owned(-32601, "Method not found", None::<()>)),
     };
 
