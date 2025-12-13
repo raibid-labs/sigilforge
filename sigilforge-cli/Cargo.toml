@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Internal crates
-sigilforge-core = { workspace = true }
+sigilforge-core = { workspace = true, features = ["oauth", "keyring-store"] }
 
 # Async runtime
 tokio = { workspace = true }
@@ -31,6 +31,9 @@ anyhow = { workspace = true }
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+# Time
+chrono = { workspace = true }
 
 # Configuration
 directories = { workspace = true }
