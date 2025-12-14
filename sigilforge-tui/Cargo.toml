@@ -16,9 +16,9 @@ path = "src/main.rs"
 sigilforge-client = { path = "../sigilforge-client" }
 
 # Fusabi TUI runtime
-fusabi-tui-core = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-core" }
-fusabi-tui-render = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-render" }
-fusabi-tui-widgets = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-widgets" }
+fusabi-tui-core = { git = "https://github.com/fusabi-lang/fusabi-tui-runtime" }
+fusabi-tui-render = { git = "https://github.com/fusabi-lang/fusabi-tui-runtime" }
+fusabi-tui-widgets = { git = "https://github.com/fusabi-lang/fusabi-tui-runtime" }
 
 # Async runtime
 tokio = { workspace = true }
