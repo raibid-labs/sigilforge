@@ -598,6 +598,7 @@ dependencies = [
 [[package]]
 name = "fusabi-tui-core"
 version = "0.1.0"
+source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
 dependencies = [
  "unicode-width",
 ]
@@ -605,6 +606,7 @@ dependencies = [
 [[package]]
 name = "fusabi-tui-render"
 version = "0.1.0"
+source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
 dependencies = [
  "crossterm",
  "fusabi-tui-core",
@@ -614,6 +616,7 @@ dependencies = [
 [[package]]
 name = "fusabi-tui-widgets"
 version = "0.1.0"
+source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
 dependencies = [
  "bitflags 2.10.0",
  "fusabi-tui-core",
@@ -2172,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "scarab-plugin-api"
-version = "0.2.0-alpha.17"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2192,7 +2195,7 @@ dependencies = [
 
 [[package]]
 name = "scarab-protocol"
-version = "0.2.0-alpha.17"
+version = "0.3.0"
 dependencies = [
  "bytemuck",
  "rkyv",
@@ -2201,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "scarab-sigilforge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2406,7 +2409,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "sigilforge-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2441,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "sigilforge-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2466,7 +2469,7 @@ dependencies = [
 
 [[package]]
 name = "sigilforge-daemon"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
