@@ -1,0 +1,38 @@
+[package]
+name = "sigilforge-tui"
+version = "0.2.0"
+edition = "2021"
+description = "Interactive TUI for Sigilforge OAuth token management"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sigilforge-tui"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+sigilforge-client = { path = "../sigilforge-client" }
+
+# Fusabi TUI runtime
+fusabi-tui-core = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-core" }
+fusabi-tui-render = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-render" }
+fusabi-tui-widgets = { path = "../../../fusabi-lang/fusabi-tui-runtime/crates/fusabi-tui-widgets" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Terminal backend
+crossterm = "0.28"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

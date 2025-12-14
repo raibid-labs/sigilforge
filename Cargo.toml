@@ -5,6 +5,7 @@ members = [
     "sigilforge-daemon",
     "sigilforge-cli",
     "sigilforge-client",
+    "sigilforge-tui",
     "scarab-sigilforge",
 ]
 
