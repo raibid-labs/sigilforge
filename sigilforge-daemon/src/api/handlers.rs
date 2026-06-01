@@ -398,9 +398,9 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
                 .await
             {
                 Ok(token) => {
-                    let expires_soon = token.expires_at.map_or(false, |exp| {
-                        exp.signed_duration_since(now) < expiry_threshold
-                    });
+                    let expires_soon = token
+                        .expires_at
+                        .is_some_and(|exp| exp.signed_duration_since(now) < expiry_threshold);
                     (
                         true,
                         expires_soon,

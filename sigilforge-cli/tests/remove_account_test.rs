@@ -36,7 +36,7 @@ async fn test_remove_account_deletes_real_secrets() {
     account_store.add_account(account).unwrap();
 
     // Store some secrets in the keyring with the proper key format
-    let test_key = format!("test-service/test-account/access_token");
+    let test_key = "test-service/test-account/access_token".to_string();
     let secret = Secret::new("test-token-value");
 
     // Try to set the secret - if this fails, keyring isn't functional

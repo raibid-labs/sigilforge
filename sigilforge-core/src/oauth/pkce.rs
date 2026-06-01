@@ -279,61 +279,61 @@ impl PkceFlow {
             let request = String::from_utf8_lossy(&buffer[..n]);
 
             // Parse the request line
-            if let Some(first_line) = request.lines().next() {
-                if let Some(path) = first_line.split_whitespace().nth(1) {
-                    // Parse query parameters
-                    if let Some(query) = path.split('?').nth(1) {
-                        let mut code = None;
-                        let mut state = None;
-                        let mut error = None;
+            if let Some(first_line) = request.lines().next()
+                && let Some(path) = first_line.split_whitespace().nth(1)
+            {
+                // Parse query parameters
+                if let Some(query) = path.split('?').nth(1) {
+                    let mut code = None;
+                    let mut state = None;
+                    let mut error = None;
 
-                        for param in query.split('&') {
-                            let parts: Vec<&str> = param.splitn(2, '=').collect();
-                            if parts.len() == 2 {
-                                match parts[0] {
-                                    "code" => code = Some(parts[1].to_string()),
-                                    "state" => state = Some(parts[1].to_string()),
-                                    "error" => error = Some(parts[1].to_string()),
-                                    _ => {}
-                                }
+                    for param in query.split('&') {
+                        let parts: Vec<&str> = param.splitn(2, '=').collect();
+                        if parts.len() == 2 {
+                            match parts[0] {
+                                "code" => code = Some(parts[1].to_string()),
+                                "state" => state = Some(parts[1].to_string()),
+                                "error" => error = Some(parts[1].to_string()),
+                                _ => {}
                             }
                         }
+                    }
 
-                        // Check for OAuth error
-                        if let Some(err) = error {
-                            let response = b"HTTP/1.1 200 OK\r\n\r\n\
+                    // Check for OAuth error
+                    if let Some(err) = error {
+                        let response = b"HTTP/1.1 200 OK\r\n\r\n\
                                 <html><body><h1>Authentication Failed</h1>\
                                 <p>The OAuth provider returned an error.</p></body></html>";
-                            let _ = socket.write_all(response).await;
+                        let _ = socket.write_all(response).await;
 
-                            return Err(TokenError::OAuthError {
-                                message: format!("OAuth provider returned error: {}", err),
-                            });
-                        }
+                        return Err(TokenError::OAuthError {
+                            message: format!("OAuth provider returned error: {}", err),
+                        });
+                    }
 
-                        // Verify state
-                        if let Some(received_state) = &state {
-                            if received_state != expected_state {
-                                let response = b"HTTP/1.1 200 OK\r\n\r\n\
+                    // Verify state
+                    if let Some(received_state) = &state
+                        && received_state != expected_state
+                    {
+                        let response = b"HTTP/1.1 200 OK\r\n\r\n\
                                     <html><body><h1>Authentication Failed</h1>\
                                     <p>Invalid state parameter (CSRF protection).</p></body></html>";
-                                let _ = socket.write_all(response).await;
+                        let _ = socket.write_all(response).await;
 
-                                return Err(TokenError::OAuthError {
-                                    message: "state parameter mismatch".to_string(),
-                                });
-                            }
-                        }
+                        return Err(TokenError::OAuthError {
+                            message: "state parameter mismatch".to_string(),
+                        });
+                    }
 
-                        // Return the code
-                        if let Some(auth_code) = code {
-                            let response = b"HTTP/1.1 200 OK\r\n\r\n\
+                    // Return the code
+                    if let Some(auth_code) = code {
+                        let response = b"HTTP/1.1 200 OK\r\n\r\n\
                                 <html><body><h1>Authentication Successful!</h1>\
                                 <p>You can close this window and return to your application.</p></body></html>";
-                            let _ = socket.write_all(response).await;
+                        let _ = socket.write_all(response).await;
 
-                            return Ok(auth_code);
-                        }
+                        return Ok(auth_code);
                     }
                 }
             }

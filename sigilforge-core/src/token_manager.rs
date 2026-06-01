@@ -70,7 +70,6 @@ pub struct DefaultTokenManager<S: SecretStore> {
     #[cfg_attr(test, doc(hidden))]
     pub store: S,
     providers: ProviderRegistry,
-    http_client: reqwest::Client,
     expiry_buffer: Duration,
 }
 
@@ -82,7 +81,6 @@ impl<S: SecretStore> DefaultTokenManager<S> {
         Self {
             store,
             providers,
-            http_client: reqwest::Client::new(),
             expiry_buffer: Duration::minutes(DEFAULT_EXPIRY_BUFFER_MINUTES),
         }
     }
@@ -102,7 +100,6 @@ impl<S: SecretStore> DefaultTokenManager<S> {
         Self {
             store,
             providers,
-            http_client: reqwest::Client::new(),
             expiry_buffer: Duration::minutes(expiry_buffer_minutes),
         }
     }
@@ -331,12 +328,10 @@ impl<S: SecretStore + Send + Sync + 'static> TokenManager for DefaultTokenManage
         if let Some(expiry_secret) = self
             .get_credential(service, account, CredentialType::TokenExpiry)
             .await?
+            && let Ok(timestamp) = expiry_secret.expose().parse::<i64>()
+            && let Some(expires_at) = chrono::DateTime::from_timestamp(timestamp, 0)
         {
-            if let Ok(timestamp) = expiry_secret.expose().parse::<i64>() {
-                if let Some(expires_at) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                    token = token.with_expiry(expires_at);
-                }
-            }
+            token = token.with_expiry(expires_at);
         }
 
         // Try to get scopes

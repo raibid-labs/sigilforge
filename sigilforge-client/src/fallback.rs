@@ -195,13 +195,12 @@ impl FallbackResolver {
         let key = format!("{}.{}", auth_ref.service, auth_ref.account);
         let cred_type = auth_ref.credential_type.to_string();
 
-        if let Some(service_config) = config.credentials.get(&auth_ref.service) {
-            if let Some(account_config) = service_config.get(&auth_ref.account) {
-                if let Some(value) = account_config.get(&cred_type) {
-                    debug!("found credential in config file for {}", key);
-                    return Ok(SecretValue::new(value.clone()));
-                }
-            }
+        if let Some(service_config) = config.credentials.get(&auth_ref.service)
+            && let Some(account_config) = service_config.get(&auth_ref.account)
+            && let Some(value) = account_config.get(&cred_type)
+        {
+            debug!("found credential in config file for {}", key);
+            return Ok(SecretValue::new(value.clone()));
         }
 
         Err(SigilforgeError::NoFallback {

@@ -12,6 +12,9 @@
 //! - Menu integration for adding and managing accounts
 //! - Support for Google, GitHub, and Spotify OAuth providers
 
+// Status-bar rendering helpers; wired into the Plugin status-bar hook in a
+// follow-up. Allow until the host status-bar callback is implemented.
+#[allow(dead_code)]
 mod status;
 
 use async_trait::async_trait;

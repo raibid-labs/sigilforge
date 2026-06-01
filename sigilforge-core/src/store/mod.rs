@@ -144,7 +144,7 @@ pub trait SecretStore: Send + Sync {
     }
 }
 
-/// Blanket implementation of SecretStore for Box<dyn SecretStore>.
+/// Blanket implementation of `SecretStore` for `Box<dyn SecretStore>`.
 ///
 /// This allows using `Box<dyn SecretStore>` anywhere a `SecretStore` is expected,
 /// enabling dynamic dispatch for secret storage backends.
