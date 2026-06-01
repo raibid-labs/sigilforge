@@ -15,13 +15,11 @@ pub mod pkce;
 pub mod device_code;
 
 #[cfg(feature = "oauth")]
-use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl,
-};
-#[cfg(feature = "oauth")]
 use crate::provider::ProviderConfig;
 #[cfg(feature = "oauth")]
 use crate::token::TokenError;
+#[cfg(feature = "oauth")]
+use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, basic::BasicClient};
 
 /// Create an OAuth2 client from a provider configuration.
 ///
@@ -42,13 +40,12 @@ pub fn create_oauth_client(
     client_secret: Option<impl Into<String>>,
     redirect_uri: Option<impl Into<String>>,
 ) -> Result<BasicClient, TokenError> {
-    let auth_url = AuthUrl::new(config.auth_url.clone())
-        .map_err(|e| TokenError::OAuthError {
-            message: format!("invalid auth URL: {}", e),
-        })?;
+    let auth_url = AuthUrl::new(config.auth_url.clone()).map_err(|e| TokenError::OAuthError {
+        message: format!("invalid auth URL: {}", e),
+    })?;
 
-    let token_url = TokenUrl::new(config.token_url.clone())
-        .map_err(|e| TokenError::OAuthError {
+    let token_url =
+        TokenUrl::new(config.token_url.clone()).map_err(|e| TokenError::OAuthError {
             message: format!("invalid token URL: {}", e),
         })?;
 
@@ -60,8 +57,8 @@ pub fn create_oauth_client(
     );
 
     if let Some(redirect) = redirect_uri {
-        let redirect_url = RedirectUrl::new(redirect.into())
-            .map_err(|e| TokenError::OAuthError {
+        let redirect_url =
+            RedirectUrl::new(redirect.into()).map_err(|e| TokenError::OAuthError {
                 message: format!("invalid redirect URL: {}", e),
             })?;
         client = client.set_redirect_uri(redirect_url);

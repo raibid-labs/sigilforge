@@ -10,10 +10,10 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 use sigilforge_core::account_store::AccountStore;
-use sigilforge_daemon::api::{start_server, ApiState, ServerHandle};
+use sigilforge_daemon::api::{ApiState, ServerHandle, start_server};
 
 /// Helper to set up a test server with unique temp directory and socket path.
 /// Returns the temp directory (which must be kept alive), socket path, and server handle.
@@ -131,7 +131,11 @@ async fn test_add_and_list_accounts() {
     let add_response: AddAccountResponse = send_rpc_request(
         &mut stream,
         "add_account",
-        json!(["spotify", "personal", ["user-read-email", "playlist-read-private"]]),
+        json!([
+            "spotify",
+            "personal",
+            ["user-read-email", "playlist-read-private"]
+        ]),
         2,
     )
     .await
@@ -275,8 +279,13 @@ async fn test_error_handling() {
         .expect("Failed to connect to daemon");
 
     // Try to get a token for a non-existent account
-    let result: Result<GetTokenResponse, _> =
-        send_rpc_request(&mut stream, "get_token", json!(["nonexistent", "account"]), 1).await;
+    let result: Result<GetTokenResponse, _> = send_rpc_request(
+        &mut stream,
+        "get_token",
+        json!(["nonexistent", "account"]),
+        1,
+    )
+    .await;
 
     assert!(result.is_err());
 

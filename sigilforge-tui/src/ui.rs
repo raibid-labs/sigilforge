@@ -36,9 +36,9 @@ pub fn render(app: &App) -> Result<Buffer> {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(&[
-            Constraint::Length(3),      // Title
-            Constraint::Fill(1),        // Content
-            Constraint::Length(3),      // Status bar
+            Constraint::Length(3), // Title
+            Constraint::Fill(1),   // Content
+            Constraint::Length(3), // Status bar
         ])
         .split(area);
 
@@ -144,14 +144,12 @@ fn render_accounts_list(app: &App, area: Rect, buffer: &mut Buffer) {
             })
             .collect();
 
-        let list = List::new(items)
-            .block(list_block)
-            .highlight_style(
-                Style::default()
-                    .bg(COLOR_PRIMARY)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            );
+        let list = List::new(items).block(list_block).highlight_style(
+            Style::default()
+                .bg(COLOR_PRIMARY)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        );
 
         let mut state = ListState::default();
         state.select(Some(app.selected));
@@ -177,9 +175,7 @@ fn render_account_details(app: &App, area: Rect, buffer: &mut Buffer) {
                 Span::styled("Service: ", Style::default().fg(COLOR_DIM)),
                 Span::styled(
                     &account.service,
-                    Style::default()
-                        .fg(COLOR_TEXT)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(COLOR_TEXT).add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(vec![

@@ -342,9 +342,9 @@ mod tests {
 #[cfg(all(test, feature = "oauth"))]
 mod oauth_tests {
     use super::*;
+    use crate::provider::ProviderRegistry;
     use crate::store::MemoryStore;
     use crate::token_manager::DefaultTokenManager;
-    use crate::provider::ProviderRegistry;
 
     #[tokio::test]
     async fn test_default_resolver_invalid_format() {
@@ -356,9 +356,13 @@ mod oauth_tests {
         let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
 
         // Invalid format should return error
-        let result: Result<ResolvedValue, ResolveError> = resolver.resolve("not-a-valid-reference").await;
+        let result: Result<ResolvedValue, ResolveError> =
+            resolver.resolve("not-a-valid-reference").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ResolveError::InvalidFormat { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolveError::InvalidFormat { .. }
+        ));
     }
 
     #[tokio::test]
@@ -373,7 +377,10 @@ mod oauth_tests {
         // vals: references should fail when disabled
         let result: Result<ResolvedValue, ResolveError> = resolver.resolve("vals:ref+test").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ResolveError::UnsupportedScheme { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolveError::UnsupportedScheme { .. }
+        ));
     }
 
     #[tokio::test]
@@ -400,7 +407,8 @@ mod oauth_tests {
         let resolver = DefaultReferenceResolver::new(resolver_store, token_manager);
 
         // Non-existent credential should return not found
-        let result: Result<ResolvedValue, ResolveError> = resolver.resolve("auth://test/account/api_key").await;
+        let result: Result<ResolvedValue, ResolveError> =
+            resolver.resolve("auth://test/account/api_key").await;
         assert!(result.is_err());
     }
 }

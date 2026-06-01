@@ -40,17 +40,16 @@
 //! ```
 
 use oauth2::{
-    basic::BasicClient,
-    DeviceAuthorizationUrl, Scope, StandardDeviceAuthorizationResponse,
+    DeviceAuthorizationUrl, Scope, StandardDeviceAuthorizationResponse, basic::BasicClient,
     reqwest::async_http_client,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::provider::ProviderConfig;
-use crate::token::{Token, TokenSet, TokenError};
 use super::create_oauth_client;
+use crate::provider::ProviderConfig;
+use crate::token::{Token, TokenError, TokenSet};
 
 /// Device authorization response.
 ///
@@ -133,11 +132,12 @@ impl DeviceCodeFlow {
         let client = self.create_client_with_device_url(&device_auth_url)?;
 
         // Build device authorization request
-        let mut device_auth_request = client.exchange_device_code().map_err(|e| {
-            TokenError::OAuthError {
-                message: format!("failed to create device code request: {}", e),
-            }
-        })?;
+        let mut device_auth_request =
+            client
+                .exchange_device_code()
+                .map_err(|e| TokenError::OAuthError {
+                    message: format!("failed to create device code request: {}", e),
+                })?;
 
         for scope in scopes {
             device_auth_request = device_auth_request.add_scope(Scope::new(scope));
@@ -221,8 +221,8 @@ impl DeviceCodeFlow {
 
                     if status.is_success() {
                         // Parse the successful token response
-                        let token_data: serde_json::Value = serde_json::from_str(&body)
-                            .map_err(|e| TokenError::OAuthError {
+                        let token_data: serde_json::Value =
+                            serde_json::from_str(&body).map_err(|e| TokenError::OAuthError {
                                 message: format!("failed to parse token response: {}", e),
                             })?;
 
@@ -242,8 +242,8 @@ impl DeviceCodeFlow {
                         let mut token = Token::new(access_token).with_scopes(scopes);
 
                         if let Some(seconds) = expires_in {
-                            let expires_at = chrono::Utc::now()
-                                + chrono::Duration::seconds(seconds as i64);
+                            let expires_at =
+                                chrono::Utc::now() + chrono::Duration::seconds(seconds as i64);
                             token = token.with_expiry(expires_at);
                         }
 
@@ -337,10 +337,11 @@ impl DeviceCodeFlow {
             None::<String>,
         )?;
 
-        let device_url = DeviceAuthorizationUrl::new(device_auth_url.to_string())
-            .map_err(|e| TokenError::OAuthError {
+        let device_url = DeviceAuthorizationUrl::new(device_auth_url.to_string()).map_err(|e| {
+            TokenError::OAuthError {
                 message: format!("invalid device authorization URL: {}", e),
-            })?;
+            }
+        })?;
 
         client = client.set_device_authorization_url(device_url);
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-14
+
+### Added
+- `sigilforge-client` crate providing a reusable client library for the daemon
+- `sigilforge-tui` crate: terminal UI built on the fusabi-tui-runtime (#41)
+- `scarab-sigilforge` plugin for Scarab status bar integration (#40)
+- `accounts_status` RPC endpoint on the daemon (#39)
+- OAuth browser flow for `add-account` in the CLI
+- Daemon RPC handlers wired to the real `TokenManager` and `ReferenceResolver`
+
+### Changed
+- Switched `fusabi-tui-runtime` dependencies from the git source to crates.io
+- Security hardening with async locks across the daemon and core
+- Bumped workspace version to 0.3.0
+
 ## [0.2.0] - 2025-12-05
 
 ### Added
@@ -56,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sigilforge-cli`: Command-line interface
 - Documentation in `docs/` directory
 
-[Unreleased]: https://github.com/raibid-labs/sigilforge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/raibid-labs/sigilforge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/raibid-labs/sigilforge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/raibid-labs/sigilforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/raibid-labs/sigilforge/releases/tag/v0.1.0

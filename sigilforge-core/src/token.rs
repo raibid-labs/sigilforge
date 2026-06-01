@@ -232,12 +232,10 @@ mod tests {
 
     #[test]
     fn test_token_is_expired() {
-        let expired_token = Token::new("test")
-            .with_expiry(Utc::now() - chrono::Duration::hours(1));
+        let expired_token = Token::new("test").with_expiry(Utc::now() - chrono::Duration::hours(1));
         assert!(expired_token.is_expired());
 
-        let valid_token = Token::new("test")
-            .with_expiry(Utc::now() + chrono::Duration::hours(1));
+        let valid_token = Token::new("test").with_expiry(Utc::now() + chrono::Duration::hours(1));
         assert!(!valid_token.is_expired());
 
         let no_expiry_token = Token::new("test");
@@ -246,8 +244,7 @@ mod tests {
 
     #[test]
     fn test_token_expires_within() {
-        let token = Token::new("test")
-            .with_expiry(Utc::now() + chrono::Duration::minutes(5));
+        let token = Token::new("test").with_expiry(Utc::now() + chrono::Duration::minutes(5));
 
         assert!(token.expires_within(chrono::Duration::minutes(10)));
         assert!(!token.expires_within(chrono::Duration::minutes(2)));

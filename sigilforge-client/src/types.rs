@@ -37,9 +37,7 @@ impl AccessToken {
 
     /// Check if the token is expired.
     pub fn is_expired(&self) -> bool {
-        self.expires_at
-            .map(|exp| exp < Utc::now())
-            .unwrap_or(false)
+        self.expires_at.map(|exp| exp < Utc::now()).unwrap_or(false)
     }
 
     /// Check if the token expires within the given duration.

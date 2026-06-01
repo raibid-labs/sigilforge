@@ -12,12 +12,15 @@
 //! - Menu integration for adding and managing accounts
 //! - Support for Google, GitHub, and Spotify OAuth providers
 
+// Status-bar rendering helpers; wired into the Plugin status-bar hook in a
+// follow-up. Allow until the host status-bar callback is implemented.
+#[allow(dead_code)]
 mod status;
 
 use async_trait::async_trait;
 use scarab_plugin_api::{
-    menu::{MenuAction, MenuItem},
     Plugin, PluginContext, PluginMetadata, Result as PluginResult,
+    menu::{MenuAction, MenuItem},
 };
 use sigilforge_core::{AccountStore, AccountStoreError};
 use std::sync::Arc;
@@ -88,7 +91,10 @@ impl SigilforgePlugin {
             }
 
             *self.accounts.write().await = status_list;
-            info!("Refreshed account status: {} accounts loaded", self.accounts.read().await.len());
+            info!(
+                "Refreshed account status: {} accounts loaded",
+                self.accounts.read().await.len()
+            );
         }
 
         Ok(())
@@ -192,21 +198,12 @@ impl Plugin for SigilforgePlugin {
             MenuItem::new(
                 "Add Account",
                 MenuAction::SubMenu(vec![
-                    MenuItem::new(
-                        "Google",
-                        MenuAction::Remote("add_google".to_string()),
-                    )
-                    .with_icon("🔍"),
-                    MenuItem::new(
-                        "GitHub",
-                        MenuAction::Remote("add_github".to_string()),
-                    )
-                    .with_icon("🐙"),
-                    MenuItem::new(
-                        "Spotify",
-                        MenuAction::Remote("add_spotify".to_string()),
-                    )
-                    .with_icon("🎵"),
+                    MenuItem::new("Google", MenuAction::Remote("add_google".to_string()))
+                        .with_icon("🔍"),
+                    MenuItem::new("GitHub", MenuAction::Remote("add_github".to_string()))
+                        .with_icon("🐙"),
+                    MenuItem::new("Spotify", MenuAction::Remote("add_spotify".to_string()))
+                        .with_icon("🎵"),
                 ]),
             )
             .with_icon("➕"),

@@ -48,19 +48,18 @@ impl AuthRef {
     /// ```
     pub fn parse(uri: &str) -> Result<Self> {
         // Check scheme
-        let rest = uri
-            .strip_prefix("auth://")
-            .ok_or_else(|| SigilforgeError::InvalidReference(
-                format!("URI must start with 'auth://': {}", uri)
-            ))?;
+        let rest = uri.strip_prefix("auth://").ok_or_else(|| {
+            SigilforgeError::InvalidReference(format!("URI must start with 'auth://': {}", uri))
+        })?;
 
         // Split path components
         let parts: Vec<&str> = rest.split('/').collect();
 
         if parts.len() < 3 {
-            return Err(SigilforgeError::InvalidReference(
-                format!("URI must have format 'auth://service/account/type': {}", uri)
-            ));
+            return Err(SigilforgeError::InvalidReference(format!(
+                "URI must have format 'auth://service/account/type': {}",
+                uri
+            )));
         }
 
         let service = parts[0];
@@ -69,20 +68,19 @@ impl AuthRef {
 
         if service.is_empty() {
             return Err(SigilforgeError::InvalidReference(
-                "service cannot be empty".to_string()
+                "service cannot be empty".to_string(),
             ));
         }
 
         if account.is_empty() {
             return Err(SigilforgeError::InvalidReference(
-                "account cannot be empty".to_string()
+                "account cannot be empty".to_string(),
             ));
         }
 
-        let credential_type = cred_type_str.parse::<CredentialType>()
-            .map_err(|_| SigilforgeError::InvalidReference(
-                format!("unknown credential type: {}", cred_type_str)
-            ))?;
+        let credential_type = cred_type_str.parse::<CredentialType>().map_err(|_| {
+            SigilforgeError::InvalidReference(format!("unknown credential type: {}", cred_type_str))
+        })?;
 
         Ok(Self {
             service: service.to_string(),
@@ -152,26 +150,68 @@ mod tests {
     #[test]
     fn test_parse_valid_uris() {
         let cases = vec![
-            ("auth://spotify/personal/token", "spotify", "personal", CredentialType::Token),
-            ("auth://github/oss/api_key", "github", "oss", CredentialType::ApiKey),
-            ("auth://openai/default/api_key", "openai", "default", CredentialType::ApiKey),
-            ("auth://gmail/work/refresh_token", "gmail", "work", CredentialType::RefreshToken),
-            ("auth://oauth/app/client_id", "oauth", "app", CredentialType::ClientId),
-            ("auth://oauth/app/client_secret", "oauth", "app", CredentialType::ClientSecret),
+            (
+                "auth://spotify/personal/token",
+                "spotify",
+                "personal",
+                CredentialType::Token,
+            ),
+            (
+                "auth://github/oss/api_key",
+                "github",
+                "oss",
+                CredentialType::ApiKey,
+            ),
+            (
+                "auth://openai/default/api_key",
+                "openai",
+                "default",
+                CredentialType::ApiKey,
+            ),
+            (
+                "auth://gmail/work/refresh_token",
+                "gmail",
+                "work",
+                CredentialType::RefreshToken,
+            ),
+            (
+                "auth://oauth/app/client_id",
+                "oauth",
+                "app",
+                CredentialType::ClientId,
+            ),
+            (
+                "auth://oauth/app/client_secret",
+                "oauth",
+                "app",
+                CredentialType::ClientSecret,
+            ),
         ];
 
         for (uri, expected_service, expected_account, expected_type) in cases {
             let auth_ref = AuthRef::parse(uri).unwrap();
-            assert_eq!(auth_ref.service, expected_service, "service mismatch for {}", uri);
-            assert_eq!(auth_ref.account, expected_account, "account mismatch for {}", uri);
-            assert_eq!(auth_ref.credential_type, expected_type, "type mismatch for {}", uri);
+            assert_eq!(
+                auth_ref.service, expected_service,
+                "service mismatch for {}",
+                uri
+            );
+            assert_eq!(
+                auth_ref.account, expected_account,
+                "account mismatch for {}",
+                uri
+            );
+            assert_eq!(
+                auth_ref.credential_type, expected_type,
+                "type mismatch for {}",
+                uri
+            );
         }
     }
 
     #[test]
     fn test_parse_invalid_uris() {
         let cases = vec![
-            "http://spotify/personal/token",  // wrong scheme
+            "http://spotify/personal/token",   // wrong scheme
             "auth://spotify/personal",         // missing type
             "auth://spotify",                  // missing account and type
             "auth:///personal/token",          // missing service
@@ -193,15 +233,27 @@ mod tests {
     #[test]
     fn test_to_storage_key() {
         let auth_ref = AuthRef::new("spotify", "personal", CredentialType::Token);
-        assert_eq!(auth_ref.to_storage_key(), "sigilforge/spotify/personal/token");
+        assert_eq!(
+            auth_ref.to_storage_key(),
+            "sigilforge/spotify/personal/token"
+        );
     }
 
     #[test]
     fn test_to_env_var() {
         let cases = vec![
-            (AuthRef::new("spotify", "personal", CredentialType::Token), "SIGILFORGE_SPOTIFY_PERSONAL_TOKEN"),
-            (AuthRef::new("github", "oss", CredentialType::ApiKey), "SIGILFORGE_GITHUB_OSS_API_KEY"),
-            (AuthRef::new("gmail", "work", CredentialType::RefreshToken), "SIGILFORGE_GMAIL_WORK_REFRESH_TOKEN"),
+            (
+                AuthRef::new("spotify", "personal", CredentialType::Token),
+                "SIGILFORGE_SPOTIFY_PERSONAL_TOKEN",
+            ),
+            (
+                AuthRef::new("github", "oss", CredentialType::ApiKey),
+                "SIGILFORGE_GITHUB_OSS_API_KEY",
+            ),
+            (
+                AuthRef::new("gmail", "work", CredentialType::RefreshToken),
+                "SIGILFORGE_GMAIL_WORK_REFRESH_TOKEN",
+            ),
         ];
 
         for (auth_ref, expected) in cases {

@@ -196,19 +196,16 @@ impl DaemonConnection {
         debug!("connecting to daemon at {:?}", self.socket_path);
 
         // Connect to socket
-        let stream = tokio::time::timeout(
-            self.timeout,
-            UnixStream::connect(&self.socket_path),
-        )
-        .await
-        .map_err(|_| SigilforgeError::Timeout)?
-        .map_err(|e| {
-            SigilforgeError::DaemonUnavailable(format!(
-                "failed to connect to {}: {}",
-                self.socket_path.display(),
-                e
-            ))
-        })?;
+        let stream = tokio::time::timeout(self.timeout, UnixStream::connect(&self.socket_path))
+            .await
+            .map_err(|_| SigilforgeError::Timeout)?
+            .map_err(|e| {
+                SigilforgeError::DaemonUnavailable(format!(
+                    "failed to connect to {}: {}",
+                    self.socket_path.display(),
+                    e
+                ))
+            })?;
 
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
@@ -235,7 +232,9 @@ impl DaemonConnection {
         tokio::time::timeout(self.timeout, reader.read_line(&mut response_line))
             .await
             .map_err(|_| SigilforgeError::Timeout)?
-            .map_err(|e| SigilforgeError::NetworkError(format!("failed to read response: {}", e)))?;
+            .map_err(|e| {
+                SigilforgeError::NetworkError(format!("failed to read response: {}", e))
+            })?;
 
         trace!("received response: {}", response_line.trim());
 
@@ -250,11 +249,9 @@ impl DaemonConnection {
             });
         }
 
-        response.result.ok_or_else(|| {
-            SigilforgeError::DaemonError {
-                code: -32600,
-                message: "missing result in response".to_string(),
-            }
+        response.result.ok_or_else(|| SigilforgeError::DaemonError {
+            code: -32600,
+            message: "missing result in response".to_string(),
         })
     }
 
@@ -314,7 +311,8 @@ mod tests {
 
     #[test]
     fn test_json_rpc_response_deserialization() {
-        let json = r#"{"jsonrpc":"2.0","id":1,"result":{"access_token":"test","token_type":"Bearer"}}"#;
+        let json =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"access_token":"test","token_type":"Bearer"}}"#;
         let response: JsonRpcResponse = serde_json::from_str(json).unwrap();
         assert!(response.result.is_some());
         assert!(response.error.is_none());
@@ -322,7 +320,8 @@ mod tests {
 
     #[test]
     fn test_json_rpc_error_deserialization() {
-        let json = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid request"}}"#;
+        let json =
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid request"}}"#;
         let response: JsonRpcResponse = serde_json::from_str(json).unwrap();
         assert!(response.result.is_none());
         assert!(response.error.is_some());
