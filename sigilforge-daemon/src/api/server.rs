@@ -115,10 +115,7 @@ pub async fn start_server(socket_path: &Path, state: ApiState) -> Result<ServerH
 }
 
 /// Handle a single connection
-async fn handle_connection(
-    mut stream: UnixStream,
-    api: Arc<SigilforgeApiImpl>,
-) -> Result<()> {
+async fn handle_connection(mut stream: UnixStream, api: Arc<SigilforgeApiImpl>) -> Result<()> {
     // Verify peer credentials on Unix (security check)
     #[cfg(unix)]
     {
@@ -156,7 +153,9 @@ async fn handle_connection(
                 },
                 "id": null
             });
-            writer.write_all(error_response.to_string().as_bytes()).await?;
+            writer
+                .write_all(error_response.to_string().as_bytes())
+                .await?;
             writer.write_all(b"\n").await?;
             writer.flush().await?;
             continue;
@@ -176,7 +175,9 @@ async fn handle_connection(
                     },
                     "id": null
                 });
-                writer.write_all(error_response.to_string().as_bytes()).await?;
+                writer
+                    .write_all(error_response.to_string().as_bytes())
+                    .await?;
                 writer.write_all(b"\n").await?;
                 writer.flush().await?;
                 continue;
@@ -200,7 +201,10 @@ async fn process_request(
 ) -> serde_json::Value {
     use jsonrpsee::types::ErrorObject;
 
-    let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let method = match request.get("method").and_then(|m| m.as_str()) {
         Some(m) => m,
         None => {
@@ -215,7 +219,10 @@ async fn process_request(
         }
     };
 
-    let params = request.get("params").cloned().unwrap_or(serde_json::Value::Array(vec![]));
+    let params = request
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(vec![]));
 
     // Call the appropriate method
     let result = match method {
@@ -224,7 +231,10 @@ async fn process_request(
             if let Some(arr) = params_array {
                 if arr.len() >= 2 {
                     if let (Some(service), Some(account)) = (arr[0].as_str(), arr[1].as_str()) {
-                        match api.get_token(service.to_string(), account.to_string()).await {
+                        match api
+                            .get_token(service.to_string(), account.to_string())
+                            .await
+                        {
                             Ok(resp) => Ok(serde_json::to_value(resp).unwrap()),
                             Err(e) => Err(e),
                         }
@@ -239,7 +249,8 @@ async fn process_request(
             }
         }
         "list_accounts" => {
-            let service = params.as_array()
+            let service = params
+                .as_array()
                 .and_then(|arr| arr.first())
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
@@ -253,12 +264,16 @@ async fn process_request(
             if let Some(arr) = params_array {
                 if arr.len() >= 3 {
                     if let (Some(service), Some(account), Some(scopes)) =
-                        (arr[0].as_str(), arr[1].as_str(), arr[2].as_array()) {
+                        (arr[0].as_str(), arr[1].as_str(), arr[2].as_array())
+                    {
                         let scopes_vec: Vec<String> = scopes
                             .iter()
                             .filter_map(|s| s.as_str().map(|s| s.to_string()))
                             .collect();
-                        match api.add_account(service.to_string(), account.to_string(), scopes_vec).await {
+                        match api
+                            .add_account(service.to_string(), account.to_string(), scopes_vec)
+                            .await
+                        {
                             Ok(resp) => Ok(serde_json::to_value(resp).unwrap()),
                             Err(e) => Err(e),
                         }
@@ -273,7 +288,8 @@ async fn process_request(
             }
         }
         "resolve" => {
-            let reference = params.as_array()
+            let reference = params
+                .as_array()
                 .and_then(|arr| arr.first())
                 .and_then(|v| v.as_str());
             if let Some(ref_str) = reference {
@@ -285,12 +301,10 @@ async fn process_request(
                 Err(ErrorObject::owned(-32602, "Invalid params", None::<()>))
             }
         }
-        "accounts_status" => {
-            match api.accounts_status().await {
-                Ok(resp) => Ok(serde_json::to_value(resp).unwrap()),
-                Err(e) => Err(e),
-            }
-        }
+        "accounts_status" => match api.accounts_status().await {
+            Ok(resp) => Ok(serde_json::to_value(resp).unwrap()),
+            Err(e) => Err(e),
+        },
         _ => Err(ErrorObject::owned(-32601, "Method not found", None::<()>)),
     };
 

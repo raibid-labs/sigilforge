@@ -103,8 +103,8 @@ pub use client::{SigilforgeClient, SigilforgeClientBuilder, TokenProvider};
 
 // Re-export from other modules
 pub use fallback::{FallbackConfig, FallbackResolver};
-pub use resolve::{is_auth_uri, AuthRef};
-pub use socket::{default_socket_path, DaemonConnection};
+pub use resolve::{AuthRef, is_auth_uri};
+pub use socket::{DaemonConnection, default_socket_path};
 pub use types::{AccessToken, CredentialType, DaemonHealth, Result, SecretValue, SigilforgeError};
 
 // Note: Fusabi host function integration is provided through fusabi-stdlib-ext.
@@ -135,7 +135,12 @@ mod tests {
     #[tokio::test]
     async fn test_client_with_env_fallback() {
         // SAFETY: Test-only env var manipulation, no concurrent access
-        unsafe { std::env::set_var("SIGILFORGE_TEST_INTEGRATION_TOKEN", "integration-test-token") };
+        unsafe {
+            std::env::set_var(
+                "SIGILFORGE_TEST_INTEGRATION_TOKEN",
+                "integration-test-token",
+            )
+        };
 
         let client = SigilforgeClient::fallback_only(FallbackConfig::env_vars());
         let token = client.get_token("test", "integration").await.unwrap();

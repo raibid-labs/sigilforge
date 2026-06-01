@@ -30,13 +30,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-mod memory;
 #[cfg(feature = "keyring-store")]
 mod keyring;
+mod memory;
 
-pub use memory::MemoryStore;
 #[cfg(feature = "keyring-store")]
 pub use keyring::KeyringStore;
+pub use memory::MemoryStore;
 
 /// A secret value that prevents accidental exposure in logs.
 ///
@@ -352,16 +352,24 @@ mod tests {
 
     #[test]
     fn test_store_error_display() {
-        let err = StoreError::NotFound { key: "test-key".to_string() };
+        let err = StoreError::NotFound {
+            key: "test-key".to_string(),
+        };
         assert!(err.to_string().contains("not found"));
 
-        let err = StoreError::AccessDenied { key: "test-key".to_string() };
+        let err = StoreError::AccessDenied {
+            key: "test-key".to_string(),
+        };
         assert!(err.to_string().contains("denied"));
 
-        let err = StoreError::BackendError { message: "connection failed".to_string() };
+        let err = StoreError::BackendError {
+            message: "connection failed".to_string(),
+        };
         assert!(err.to_string().contains("connection failed"));
 
-        let err = StoreError::KeyringUnavailable { message: "no keyring".to_string() };
+        let err = StoreError::KeyringUnavailable {
+            message: "no keyring".to_string(),
+        };
         assert!(err.to_string().contains("no keyring"));
     }
 }

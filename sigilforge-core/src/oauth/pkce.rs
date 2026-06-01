@@ -39,14 +39,14 @@
 //! ```
 
 use oauth2::{
-    AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope,
-    TokenResponse, reqwest::async_http_client,
+    AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
+    reqwest::async_http_client,
 };
 use std::sync::{Arc, Mutex};
 
-use crate::provider::ProviderConfig;
-use crate::token::{Token, TokenSet, TokenError};
 use super::create_oauth_client;
+use crate::provider::ProviderConfig;
+use crate::token::{Token, TokenError, TokenSet};
 
 /// PKCE flow implementation for OAuth 2.0 authorization code flow.
 ///
@@ -150,10 +150,15 @@ impl PkceFlow {
     /// - The token exchange fails
     /// - Network errors occur
     pub async fn exchange_code(&self, code: impl Into<String>) -> Result<TokenSet, TokenError> {
-        let verifier = self.verifier.lock().unwrap().take()
-            .ok_or_else(|| TokenError::OAuthError {
-                message: "PKCE verifier not found. Call build_authorization_url first.".to_string(),
-            })?;
+        let verifier =
+            self.verifier
+                .lock()
+                .unwrap()
+                .take()
+                .ok_or_else(|| TokenError::OAuthError {
+                    message: "PKCE verifier not found. Call build_authorization_url first."
+                        .to_string(),
+                })?;
 
         let client = create_oauth_client(
             &self.config,
@@ -179,13 +184,12 @@ impl PkceFlow {
             .map(|s| s.iter().map(|scope| scope.to_string()).collect())
             .unwrap_or_default();
 
-        let mut token = Token::new(access_token)
-            .with_scopes(scopes);
+        let mut token = Token::new(access_token).with_scopes(scopes);
 
         // Set expiration if provided
         if let Some(duration) = expires_in {
-            let expires_at = chrono::Utc::now() + chrono::Duration::from_std(duration)
-                .map_err(|e| TokenError::OAuthError {
+            let expires_at = chrono::Utc::now()
+                + chrono::Duration::from_std(duration).map_err(|e| TokenError::OAuthError {
                     message: format!("invalid expiration duration: {}", e),
                 })?;
             token = token.with_expiry(expires_at);
@@ -244,8 +248,8 @@ impl PkceFlow {
         port: u16,
         expected_state: &str,
     ) -> Result<String, TokenError> {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         let addr = format!("127.0.0.1:{}", port);
         let listener = TcpListener::bind(&addr)
@@ -257,14 +261,16 @@ impl PkceFlow {
         tracing::info!("Listening for OAuth callback on {}", addr);
 
         loop {
-            let (mut socket, _) = listener.accept()
+            let (mut socket, _) = listener
+                .accept()
                 .await
                 .map_err(|e| TokenError::OAuthError {
                     message: format!("failed to accept connection: {}", e),
                 })?;
 
             let mut buffer = [0; 4096];
-            let n = socket.read(&mut buffer)
+            let n = socket
+                .read(&mut buffer)
                 .await
                 .map_err(|e| TokenError::OAuthError {
                     message: format!("failed to read request: {}", e),

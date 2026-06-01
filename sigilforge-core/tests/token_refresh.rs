@@ -17,8 +17,8 @@ use sigilforge_core::{
     token_manager::DefaultTokenManager,
 };
 use wiremock::{
-    matchers::{body_string_contains, method, path},
     Mock, MockServer, ResponseTemplate,
+    matchers::{body_string_contains, method, path},
 };
 
 /// Helper to create a test provider configuration.
@@ -48,9 +48,16 @@ async fn setup_manager(
     let account = AccountId::new("test-account");
 
     // Store client credentials
-    let client_id_key = format!("sigilforge/{}/{}/client_id", service.as_str(), account.as_str());
-    let client_secret_key =
-        format!("sigilforge/{}/{}/client_secret", service.as_str(), account.as_str());
+    let client_id_key = format!(
+        "sigilforge/{}/{}/client_id",
+        service.as_str(),
+        account.as_str()
+    );
+    let client_secret_key = format!(
+        "sigilforge/{}/{}/client_secret",
+        service.as_str(),
+        account.as_str()
+    );
 
     manager
         .store
@@ -165,8 +172,7 @@ async fn test_ensure_access_token_refresh_fails() {
     let (manager, service, account) = setup_manager(&format!("{}/token", mock_server.uri())).await;
 
     // Store an expired token with a refresh token
-    let token = Token::new("expired-access-token")
-        .with_expiry(Utc::now() - Duration::hours(1));
+    let token = Token::new("expired-access-token").with_expiry(Utc::now() - Duration::hours(1));
 
     let token_set = TokenSet::new(token).with_refresh_token("invalid-refresh-token");
 
@@ -190,8 +196,7 @@ async fn test_ensure_access_token_no_refresh_token() {
     let (manager, service, account) = setup_manager("https://unused.example.com").await;
 
     // Store an expired token WITHOUT a refresh token
-    let token = Token::new("expired-access-token")
-        .with_expiry(Utc::now() - Duration::hours(1));
+    let token = Token::new("expired-access-token").with_expiry(Utc::now() - Duration::hours(1));
 
     let token_set = TokenSet::new(token); // No refresh token
 
@@ -276,21 +281,25 @@ async fn test_revoke_tokens_removes_all_credentials() {
         .unwrap();
 
     // Verify it exists
-    assert!(manager
-        .get_token_set(&service, &account)
-        .await
-        .unwrap()
-        .is_some());
+    assert!(
+        manager
+            .get_token_set(&service, &account)
+            .await
+            .unwrap()
+            .is_some()
+    );
 
     // Revoke tokens
     manager.revoke_tokens(&service, &account).await.unwrap();
 
     // Verify all tokens are gone
-    assert!(manager
-        .get_token_set(&service, &account)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        manager
+            .get_token_set(&service, &account)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -356,7 +365,10 @@ async fn test_expiry_buffer_detection() {
     // Introspect should report it as inactive (within buffer)
     let info = manager.introspect_token(&service, &account).await.unwrap();
 
-    assert!(!info.active, "Token within expiry buffer should be inactive");
+    assert!(
+        !info.active,
+        "Token within expiry buffer should be inactive"
+    );
 }
 
 #[tokio::test]
@@ -368,9 +380,16 @@ async fn test_multiple_accounts_same_service() {
 
     // Store different client credentials for each account
     for account in [&account1, &account2] {
-        let client_id_key = format!("sigilforge/{}/{}/client_id", service.as_str(), account.as_str());
-        let client_secret_key =
-            format!("sigilforge/{}/{}/client_secret", service.as_str(), account.as_str());
+        let client_id_key = format!(
+            "sigilforge/{}/{}/client_id",
+            service.as_str(),
+            account.as_str()
+        );
+        let client_secret_key = format!(
+            "sigilforge/{}/{}/client_secret",
+            service.as_str(),
+            account.as_str()
+        );
 
         manager
             .store

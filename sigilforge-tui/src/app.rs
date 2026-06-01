@@ -174,10 +174,7 @@ impl App {
         }
 
         let account = &self.accounts[self.selected];
-        self.status_message = format!(
-            "Refreshing {}/{}...",
-            account.service, account.account
-        );
+        self.status_message = format!("Refreshing {}/{}...", account.service, account.account);
 
         match self
             .client

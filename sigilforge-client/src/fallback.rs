@@ -35,11 +35,9 @@ pub enum FallbackConfig {
 impl Default for FallbackConfig {
     fn default() -> Self {
         // Default chain: try env vars first, then config file
-        let mut chain = vec![
-            FallbackConfig::EnvVars {
-                prefix: "SIGILFORGE".to_string(),
-            },
-        ];
+        let mut chain = vec![FallbackConfig::EnvVars {
+            prefix: "SIGILFORGE".to_string(),
+        }];
 
         #[cfg(feature = "fallback-config")]
         {
@@ -98,11 +96,7 @@ impl FallbackResolver {
     }
 
     /// Try to resolve a token using fallback strategies.
-    pub async fn get_token(
-        &self,
-        service: &str,
-        account: &str,
-    ) -> Result<AccessToken> {
+    pub async fn get_token(&self, service: &str, account: &str) -> Result<AccessToken> {
         let auth_ref = AuthRef::new(service, account, CredentialType::Token);
         let value = self.resolve_ref(&auth_ref).await?;
         Ok(AccessToken::bearer(value.value))
@@ -126,16 +120,12 @@ impl FallbackResolver {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SecretValue>> + Send + 'a>> {
         Box::pin(async move {
             match config {
-                FallbackConfig::None => {
-                    Err(SigilforgeError::NoFallback {
-                        service: auth_ref.service.clone(),
-                        account: auth_ref.account.clone(),
-                    })
-                }
+                FallbackConfig::None => Err(SigilforgeError::NoFallback {
+                    service: auth_ref.service.clone(),
+                    account: auth_ref.account.clone(),
+                }),
 
-                FallbackConfig::EnvVars { prefix } => {
-                    self.resolve_from_env(prefix, auth_ref)
-                }
+                FallbackConfig::EnvVars { prefix } => self.resolve_from_env(prefix, auth_ref),
 
                 #[cfg(feature = "fallback-config")]
                 FallbackConfig::ConfigFile { path } => {
@@ -177,12 +167,10 @@ impl FallbackResolver {
                 debug!("found credential in env var {}", env_var);
                 Ok(SecretValue::new(value))
             }
-            Err(_) => {
-                Err(SigilforgeError::NoFallback {
-                    service: auth_ref.service.clone(),
-                    account: auth_ref.account.clone(),
-                })
-            }
+            Err(_) => Err(SigilforgeError::NoFallback {
+                service: auth_ref.service.clone(),
+                account: auth_ref.account.clone(),
+            }),
         }
     }
 
@@ -257,7 +245,10 @@ mod tests {
         unsafe { std::env::set_var("SIGILFORGE_OPENAI_DEFAULT_API_KEY", "sk-test-key") };
 
         let resolver = FallbackResolver::new(FallbackConfig::env_vars());
-        let result = resolver.resolve("auth://openai/default/api_key").await.unwrap();
+        let result = resolver
+            .resolve("auth://openai/default/api_key")
+            .await
+            .unwrap();
 
         assert_eq!(result.value, "sk-test-key");
 
@@ -293,8 +284,8 @@ mod tests {
         unsafe { std::env::set_var("BACKUP_GITHUB_OSS_API_KEY", "backup-key") };
 
         let resolver = FallbackResolver::new(FallbackConfig::chain(vec![
-            FallbackConfig::env_vars_with_prefix("PRIMARY"),  // won't have the var
-            FallbackConfig::env_vars_with_prefix("BACKUP"),   // has the var
+            FallbackConfig::env_vars_with_prefix("PRIMARY"), // won't have the var
+            FallbackConfig::env_vars_with_prefix("BACKUP"),  // has the var
         ]));
 
         let result = resolver.resolve("auth://github/oss/api_key").await.unwrap();

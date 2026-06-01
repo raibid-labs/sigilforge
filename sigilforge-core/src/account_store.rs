@@ -323,16 +323,8 @@ mod tests {
             AccountId::new("personal"),
             vec![],
         );
-        let account2 = Account::new(
-            ServiceId::new("spotify"),
-            AccountId::new("work"),
-            vec![],
-        );
-        let account3 = Account::new(
-            ServiceId::new("github"),
-            AccountId::new("main"),
-            vec![],
-        );
+        let account2 = Account::new(ServiceId::new("spotify"), AccountId::new("work"), vec![]);
+        let account3 = Account::new(ServiceId::new("github"), AccountId::new("main"), vec![]);
 
         store.add_account(account1).unwrap();
         store.add_account(account2).unwrap();
@@ -351,16 +343,8 @@ mod tests {
             AccountId::new("personal"),
             vec![],
         );
-        let account2 = Account::new(
-            ServiceId::new("spotify"),
-            AccountId::new("work"),
-            vec![],
-        );
-        let account3 = Account::new(
-            ServiceId::new("github"),
-            AccountId::new("main"),
-            vec![],
-        );
+        let account2 = Account::new(ServiceId::new("spotify"), AccountId::new("work"), vec![]);
+        let account3 = Account::new(ServiceId::new("github"), AccountId::new("main"), vec![]);
 
         store.add_account(account1).unwrap();
         store.add_account(account2).unwrap();
@@ -383,9 +367,7 @@ mod tests {
         let account = test_account();
 
         store.add_account(account.clone()).unwrap();
-        store
-            .remove_account(&account.service, &account.id)
-            .unwrap();
+        store.remove_account(&account.service, &account.id).unwrap();
 
         let retrieved = store.get_account(&account.service, &account.id).unwrap();
         assert!(retrieved.is_none());
@@ -395,10 +377,8 @@ mod tests {
     fn test_remove_nonexistent_account() {
         let (store, _temp) = test_store();
 
-        let result = store.remove_account(
-            &ServiceId::new("spotify"),
-            &AccountId::new("nonexistent"),
-        );
+        let result =
+            store.remove_account(&ServiceId::new("spotify"), &AccountId::new("nonexistent"));
 
         assert!(matches!(result, Err(AccountStoreError::NotFound { .. })));
     }

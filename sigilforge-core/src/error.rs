@@ -2,9 +2,9 @@
 
 use thiserror::Error;
 
+use crate::resolve::ResolveError;
 use crate::store::StoreError;
 use crate::token::TokenError;
-use crate::resolve::ResolveError;
 
 /// Top-level error type encompassing all Sigilforge errors.
 #[derive(Debug, Error)]

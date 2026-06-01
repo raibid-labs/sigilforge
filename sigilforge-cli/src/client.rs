@@ -155,12 +155,8 @@ impl DaemonClient {
     }
 
     /// List all configured accounts, optionally filtered by service.
-    pub async fn list_accounts(
-        &mut self,
-        service: Option<&str>,
-    ) -> Result<ListAccountsResponse> {
-        self.send_request("list_accounts", json!([service]))
-            .await
+    pub async fn list_accounts(&mut self, service: Option<&str>) -> Result<ListAccountsResponse> {
+        self.send_request("list_accounts", json!([service])).await
     }
 
     /// Add a new account with the specified scopes.
@@ -186,7 +182,11 @@ pub fn default_socket_path() -> PathBuf {
 
     if cfg!(unix) {
         dirs.as_ref()
-            .map(|d| d.runtime_dir().unwrap_or(d.data_dir()).join("sigilforge.sock"))
+            .map(|d| {
+                d.runtime_dir()
+                    .unwrap_or(d.data_dir())
+                    .join("sigilforge.sock")
+            })
             .unwrap_or_else(|| PathBuf::from("/tmp/sigilforge.sock"))
     } else {
         PathBuf::from(r"\\.\pipe\sigilforge")
