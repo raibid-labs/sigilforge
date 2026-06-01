@@ -597,26 +597,30 @@ dependencies = [
 
 [[package]]
 name = "fusabi-tui-core"
-version = "0.1.0"
-source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc59109e8d28e57d6b743c641ef88c41b8b35c67294d9c9dbb3b6b5df0169ca1"
 dependencies = [
  "unicode-width",
 ]
 
 [[package]]
 name = "fusabi-tui-render"
-version = "0.1.0"
-source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66f3804468c143fb075572870f47cd8b3f938bbb61d5ab9e63a51dfc74279ea9"
 dependencies = [
  "crossterm",
  "fusabi-tui-core",
+ "fusabi-tui-widgets",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "fusabi-tui-widgets"
-version = "0.1.0"
-source = "git+https://github.com/fusabi-lang/fusabi-tui-runtime#3b3aecd251094d9d5279e48875cafe32362bcfa0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fe4c441b18523fec6df3dd3c4c9e39c56af419b62d5f84c361643541b8c9c7f"
 dependencies = [
  "bitflags 2.10.0",
  "fusabi-tui-core",
@@ -2175,7 +2179,9 @@ dependencies = [
 
 [[package]]
 name = "scarab-plugin-api"
-version = "0.3.0"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1119839c5e9f33601b326f59ed62d75a33cb694a338270c9a7a9273c45308a0b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2195,7 +2201,9 @@ dependencies = [
 
 [[package]]
 name = "scarab-protocol"
-version = "0.3.0"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f869c0a1f6e4c06070468898f139fe582cab76c89d0cacbdbabf7043ac9d5e1"
 dependencies = [
  "bytemuck",
  "rkyv",
