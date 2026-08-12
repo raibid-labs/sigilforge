@@ -3,9 +3,9 @@
 //! This test verifies that the daemon can be shut down gracefully without panics
 //! and that the socket file is properly cleaned up.
 
-use std::path::PathBuf;
-use tokio::time::{sleep, Duration};
 use sigilforge_core::account_store::AccountStore;
+use std::path::PathBuf;
+use tokio::time::{Duration, sleep};
 
 /// Detect whether the sandbox allows binding Unix sockets. Skip tests if not.
 fn can_bind_unix_socket() -> bool {
@@ -33,8 +33,8 @@ async fn test_graceful_shutdown() {
     // Create a temporary account store
     let store_path = std::env::temp_dir().join("sigilforge-test-shutdown-accounts.json");
     let _ = std::fs::remove_file(&store_path); // Clean up from previous runs
-    let store = AccountStore::load_from_path(store_path.clone())
-        .expect("Failed to create account store");
+    let store =
+        AccountStore::load_from_path(store_path.clone()).expect("Failed to create account store");
 
     // Start the server
     let state = sigilforge_daemon::api::ApiState::with_store(store);
@@ -46,10 +46,16 @@ async fn test_graceful_shutdown() {
     sleep(Duration::from_millis(100)).await;
 
     // Verify socket exists
-    assert!(socket_path.exists(), "Socket file should exist after server start");
+    assert!(
+        socket_path.exists(),
+        "Socket file should exist after server start"
+    );
 
     // Stop the server gracefully - this should not panic
-    server_handle.stop().await.expect("Server stop should succeed");
+    server_handle
+        .stop()
+        .await
+        .expect("Server stop should succeed");
 
     // Wait a bit for cleanup
     sleep(Duration::from_millis(100)).await;
@@ -61,7 +67,10 @@ async fn test_graceful_shutdown() {
     }
 
     // Verify socket was cleaned up
-    assert!(!socket_path.exists(), "Socket file should be removed after shutdown");
+    assert!(
+        !socket_path.exists(),
+        "Socket file should be removed after shutdown"
+    );
 
     // Cleanup test account store
     let _ = std::fs::remove_file(&store_path);
@@ -70,7 +79,9 @@ async fn test_graceful_shutdown() {
 #[tokio::test]
 async fn test_shutdown_with_active_connections() {
     if !can_bind_unix_socket() {
-        eprintln!("Skipping test_shutdown_with_active_connections: Unix sockets not permitted in sandbox");
+        eprintln!(
+            "Skipping test_shutdown_with_active_connections: Unix sockets not permitted in sandbox"
+        );
         return;
     }
 
@@ -81,10 +92,11 @@ async fn test_shutdown_with_active_connections() {
     let _ = std::fs::remove_file(&socket_path);
 
     // Create a temporary account store
-    let store_path = std::env::temp_dir().join("sigilforge-test-shutdown-connections-accounts.json");
+    let store_path =
+        std::env::temp_dir().join("sigilforge-test-shutdown-connections-accounts.json");
     let _ = std::fs::remove_file(&store_path);
-    let store = AccountStore::load_from_path(store_path.clone())
-        .expect("Failed to create account store");
+    let store =
+        AccountStore::load_from_path(store_path.clone()).expect("Failed to create account store");
 
     // Start the server
     let state = sigilforge_daemon::api::ApiState::with_store(store);
@@ -103,12 +115,21 @@ async fn test_shutdown_with_active_connections() {
     // Send a request but don't wait for response
     use tokio::io::AsyncWriteExt;
     let request = r#"{"jsonrpc":"2.0","method":"list_accounts","params":[null],"id":1}"#;
-    stream.write_all(request.as_bytes()).await.expect("Failed to write request");
-    stream.write_all(b"\n").await.expect("Failed to write newline");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("Failed to write request");
+    stream
+        .write_all(b"\n")
+        .await
+        .expect("Failed to write newline");
     stream.flush().await.expect("Failed to flush");
 
     // Stop the server while connection is active - this should not panic
-    server_handle.stop().await.expect("Server stop should succeed even with active connections");
+    server_handle
+        .stop()
+        .await
+        .expect("Server stop should succeed even with active connections");
 
     // Cleanup
     if socket_path.exists() {
@@ -133,8 +154,8 @@ async fn test_multiple_stop_calls() {
     // Create a temporary account store
     let store_path = std::env::temp_dir().join("sigilforge-test-multi-stop-accounts.json");
     let _ = std::fs::remove_file(&store_path);
-    let store = AccountStore::load_from_path(store_path.clone())
-        .expect("Failed to create account store");
+    let store =
+        AccountStore::load_from_path(store_path.clone()).expect("Failed to create account store");
 
     // Start the server
     let state = sigilforge_daemon::api::ApiState::with_store(store);
@@ -146,9 +167,18 @@ async fn test_multiple_stop_calls() {
     sleep(Duration::from_millis(100)).await;
 
     // Call stop multiple times - should be idempotent
-    server_handle.stop().await.expect("First stop should succeed");
-    server_handle.stop().await.expect("Second stop should succeed");
-    server_handle.stop().await.expect("Third stop should succeed");
+    server_handle
+        .stop()
+        .await
+        .expect("First stop should succeed");
+    server_handle
+        .stop()
+        .await
+        .expect("Second stop should succeed");
+    server_handle
+        .stop()
+        .await
+        .expect("Third stop should succeed");
 
     // Cleanup
     if socket_path.exists() {

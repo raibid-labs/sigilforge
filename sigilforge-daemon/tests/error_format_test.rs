@@ -7,14 +7,14 @@
 //! - Optionally may have `data` field
 
 use serde_json::json;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 use sigilforge_core::account_store::AccountStore;
-use sigilforge_daemon::api::{start_server, ApiState};
+use sigilforge_daemon::api::{ApiState, start_server};
 
 /// Helper to start a test server that stays alive for the duration of the test
 async fn start_test_server(socket_path: &std::path::Path, store: AccountStore) {
@@ -85,7 +85,10 @@ async fn test_jsonrpc_error_format_compliance() {
     }
 
     if !socket_path.exists() {
-        panic!("Socket file was not created at {:?} after 2 seconds", socket_path);
+        panic!(
+            "Socket file was not created at {:?} after 2 seconds",
+            socket_path
+        );
     }
 
     // Test 1: Parse error (invalid JSON)
@@ -94,20 +97,35 @@ async fn test_jsonrpc_error_format_compliance() {
         .await
         .expect("Failed to get response");
 
-    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+    println!(
+        "Response: {}",
+        serde_json::to_string_pretty(&response).unwrap()
+    );
 
     // Check JSON-RPC 2.0 compliance
-    assert_eq!(response.get("jsonrpc"), Some(&json!("2.0")),
-        "Must have 'jsonrpc': '2.0' field");
+    assert_eq!(
+        response.get("jsonrpc"),
+        Some(&json!("2.0")),
+        "Must have 'jsonrpc': '2.0' field"
+    );
     assert!(response.get("error").is_some(), "Must have 'error' field");
-    assert_eq!(response.get("id"), Some(&json!(null)),
-        "Must have 'id' field (null for parse errors)");
+    assert_eq!(
+        response.get("id"),
+        Some(&json!(null)),
+        "Must have 'id' field (null for parse errors)"
+    );
 
     let error = response.get("error").unwrap();
     assert!(error.get("code").is_some(), "Error must have 'code' field");
-    assert!(error.get("message").is_some(), "Error must have 'message' field");
-    assert_eq!(error.get("code").unwrap().as_i64(), Some(-32700),
-        "Parse error should have code -32700");
+    assert!(
+        error.get("message").is_some(),
+        "Error must have 'message' field"
+    );
+    assert_eq!(
+        error.get("code").unwrap().as_i64(),
+        Some(-32700),
+        "Parse error should have code -32700"
+    );
 
     // Test 2: Invalid request (missing method)
     println!("\n=== Test 2: Invalid Request (Missing Method) ===");
@@ -121,19 +139,34 @@ async fn test_jsonrpc_error_format_compliance() {
         .await
         .expect("Failed to get response");
 
-    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+    println!(
+        "Response: {}",
+        serde_json::to_string_pretty(&response).unwrap()
+    );
 
-    assert_eq!(response.get("jsonrpc"), Some(&json!("2.0")),
-        "Must have 'jsonrpc': '2.0' field");
+    assert_eq!(
+        response.get("jsonrpc"),
+        Some(&json!("2.0")),
+        "Must have 'jsonrpc': '2.0' field"
+    );
     assert!(response.get("error").is_some(), "Must have 'error' field");
-    assert_eq!(response.get("id"), Some(&json!(42)),
-        "Must echo the request id");
+    assert_eq!(
+        response.get("id"),
+        Some(&json!(42)),
+        "Must echo the request id"
+    );
 
     let error = response.get("error").unwrap();
     assert!(error.get("code").is_some(), "Error must have 'code' field");
-    assert!(error.get("message").is_some(), "Error must have 'message' field");
-    assert_eq!(error.get("code").unwrap().as_i64(), Some(-32600),
-        "Invalid request should have code -32600");
+    assert!(
+        error.get("message").is_some(),
+        "Error must have 'message' field"
+    );
+    assert_eq!(
+        error.get("code").unwrap().as_i64(),
+        Some(-32600),
+        "Invalid request should have code -32600"
+    );
 
     // Test 3: Method not found
     println!("\n=== Test 3: Method Not Found ===");
@@ -148,17 +181,29 @@ async fn test_jsonrpc_error_format_compliance() {
         .await
         .expect("Failed to get response");
 
-    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+    println!(
+        "Response: {}",
+        serde_json::to_string_pretty(&response).unwrap()
+    );
 
-    assert_eq!(response.get("jsonrpc"), Some(&json!("2.0")),
-        "Must have 'jsonrpc': '2.0' field");
+    assert_eq!(
+        response.get("jsonrpc"),
+        Some(&json!("2.0")),
+        "Must have 'jsonrpc': '2.0' field"
+    );
     assert!(response.get("error").is_some(), "Must have 'error' field");
-    assert_eq!(response.get("id"), Some(&json!(100)),
-        "Must echo the request id");
+    assert_eq!(
+        response.get("id"),
+        Some(&json!(100)),
+        "Must echo the request id"
+    );
 
     let error = response.get("error").unwrap();
-    assert_eq!(error.get("code").unwrap().as_i64(), Some(-32601),
-        "Method not found should have code -32601");
+    assert_eq!(
+        error.get("code").unwrap().as_i64(),
+        Some(-32601),
+        "Method not found should have code -32601"
+    );
 
     // Test 4: Invalid params
     println!("\n=== Test 4: Invalid Params ===");
@@ -173,17 +218,29 @@ async fn test_jsonrpc_error_format_compliance() {
         .await
         .expect("Failed to get response");
 
-    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+    println!(
+        "Response: {}",
+        serde_json::to_string_pretty(&response).unwrap()
+    );
 
-    assert_eq!(response.get("jsonrpc"), Some(&json!("2.0")),
-        "Must have 'jsonrpc': '2.0' field");
+    assert_eq!(
+        response.get("jsonrpc"),
+        Some(&json!("2.0")),
+        "Must have 'jsonrpc': '2.0' field"
+    );
     assert!(response.get("error").is_some(), "Must have 'error' field");
-    assert_eq!(response.get("id"), Some(&json!(200)),
-        "Must echo the request id");
+    assert_eq!(
+        response.get("id"),
+        Some(&json!(200)),
+        "Must echo the request id"
+    );
 
     let error = response.get("error").unwrap();
-    assert_eq!(error.get("code").unwrap().as_i64(), Some(-32602),
-        "Invalid params should have code -32602");
+    assert_eq!(
+        error.get("code").unwrap().as_i64(),
+        Some(-32602),
+        "Invalid params should have code -32602"
+    );
 
     // Test 5: Application error (account not found)
     println!("\n=== Test 5: Application Error (Account Not Found) ===");
@@ -198,17 +255,29 @@ async fn test_jsonrpc_error_format_compliance() {
         .await
         .expect("Failed to get response");
 
-    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+    println!(
+        "Response: {}",
+        serde_json::to_string_pretty(&response).unwrap()
+    );
 
-    assert_eq!(response.get("jsonrpc"), Some(&json!("2.0")),
-        "Must have 'jsonrpc': '2.0' field");
+    assert_eq!(
+        response.get("jsonrpc"),
+        Some(&json!("2.0")),
+        "Must have 'jsonrpc': '2.0' field"
+    );
     assert!(response.get("error").is_some(), "Must have 'error' field");
-    assert_eq!(response.get("id"), Some(&json!(300)),
-        "Must echo the request id");
+    assert_eq!(
+        response.get("id"),
+        Some(&json!(300)),
+        "Must echo the request id"
+    );
 
     let error = response.get("error").unwrap();
     assert!(error.get("code").is_some(), "Error must have 'code' field");
-    assert!(error.get("message").is_some(), "Error must have 'message' field");
+    assert!(
+        error.get("message").is_some(),
+        "Error must have 'message' field"
+    );
 
     // Cleanup
     let _ = std::fs::remove_file(&socket_path);

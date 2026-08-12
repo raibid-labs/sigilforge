@@ -144,6 +144,10 @@ test-keyring:
 test-oauth:
     cargo test -p sigilforge-core --features oauth oauth
 
+# Run only GitHub App tests
+test-github-app:
+    cargo test -p sigilforge-core --features github-app github_app
+
 # ========================================
 # Code Quality
 # ========================================

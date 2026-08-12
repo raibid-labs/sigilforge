@@ -20,12 +20,12 @@
 //! }
 //! ```
 
+pub mod account_store;
+pub mod error;
 pub mod model;
+pub mod resolve;
 pub mod store;
 pub mod token;
-pub mod resolve;
-pub mod error;
-pub mod account_store;
 
 #[cfg(feature = "oauth")]
 pub mod provider;
@@ -36,56 +36,35 @@ pub mod token_manager;
 #[cfg(feature = "oauth")]
 pub mod oauth;
 
-// Re-export commonly used types at crate root
-pub use model::{
-    ServiceId,
-    AccountId,
-    Account,
-    CredentialRef,
-    CredentialType,
-};
+#[cfg(feature = "github-app")]
+pub mod github_app;
 
-pub use store::{
-    Secret,
-    SecretStore,
-    StoreError,
-    MemoryStore,
-    create_store,
-};
+// Re-export commonly used types at crate root
+pub use model::{Account, AccountId, CredentialRef, CredentialType, ServiceId};
+
+pub use store::{MemoryStore, Secret, SecretStore, StoreError, create_store};
 
 #[cfg(feature = "keyring-store")]
 pub use store::KeyringStore;
 
-pub use token::{
-    Token,
-    TokenSet,
-    TokenInfo,
-    TokenManager,
-    TokenError,
-};
+pub use token::{Token, TokenError, TokenInfo, TokenManager, TokenSet};
 
-pub use resolve::{
-    ResolvedValue,
-    ReferenceResolver,
-    ResolveError,
-    ResolverConfig,
-};
+pub use resolve::{ReferenceResolver, ResolveError, ResolvedValue, ResolverConfig};
 
 #[cfg(feature = "oauth")]
 pub use resolve::DefaultReferenceResolver;
 
 pub use error::SigilforgeError;
 
-pub use account_store::{
-    AccountStore,
-    AccountStoreError,
-};
+pub use account_store::{AccountStore, AccountStoreError};
 
 #[cfg(feature = "oauth")]
-pub use provider::{
-    ProviderConfig,
-    ProviderRegistry,
-};
+pub use provider::{ProviderConfig, ProviderRegistry};
 
 #[cfg(feature = "oauth")]
 pub use token_manager::DefaultTokenManager;
+
+#[cfg(feature = "github-app")]
+pub use github_app::{
+    GITHUB_APP_SERVICE, GitHubAppCredential, GitHubAppError, GitHubAppTokenManager,
+};

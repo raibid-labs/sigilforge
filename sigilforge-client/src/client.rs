@@ -1,5 +1,5 @@
 use crate::fallback::{FallbackConfig, FallbackResolver};
-use crate::socket::{default_socket_path, DaemonConnection};
+use crate::socket::{DaemonConnection, default_socket_path};
 use crate::types::{AccessToken, DaemonHealth, Result, SecretValue, SigilforgeError};
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -234,10 +234,7 @@ impl TokenProvider for SigilforgeClient {
         }
 
         // Fall back to configured strategies
-        info!(
-            "using fallback for token {}/{}",
-            service, account
-        );
+        info!("using fallback for token {}/{}", service, account);
         self.fallback.get_token(service, account).await
     }
 
@@ -248,10 +245,7 @@ impl TokenProvider for SigilforgeClient {
         }
 
         // Fall back (can't refresh from fallback, just get token)
-        info!(
-            "using fallback for token {}/{}",
-            service, account
-        );
+        info!("using fallback for token {}/{}", service, account);
         self.fallback.get_token(service, account).await
     }
 
@@ -358,7 +352,10 @@ mod tests {
         unsafe { std::env::set_var("SIGILFORGE_CLIENTTEST_RESOLVE_API_KEY", "sk-test-123") };
 
         let client = SigilforgeClient::fallback_only(FallbackConfig::env_vars());
-        let result = client.resolve("auth://clienttest/resolve/api_key").await.unwrap();
+        let result = client
+            .resolve("auth://clienttest/resolve/api_key")
+            .await
+            .unwrap();
 
         assert_eq!(result.value, "sk-test-123");
 

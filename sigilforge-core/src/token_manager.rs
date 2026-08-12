@@ -70,7 +70,6 @@ pub struct DefaultTokenManager<S: SecretStore> {
     #[cfg_attr(test, doc(hidden))]
     pub store: S,
     providers: ProviderRegistry,
-    http_client: reqwest::Client,
     expiry_buffer: Duration,
 }
 
@@ -82,7 +81,6 @@ impl<S: SecretStore> DefaultTokenManager<S> {
         Self {
             store,
             providers,
-            http_client: reqwest::Client::new(),
             expiry_buffer: Duration::minutes(DEFAULT_EXPIRY_BUFFER_MINUTES),
         }
     }
@@ -102,7 +100,6 @@ impl<S: SecretStore> DefaultTokenManager<S> {
         Self {
             store,
             providers,
-            http_client: reqwest::Client::new(),
             expiry_buffer: Duration::minutes(expiry_buffer_minutes),
         }
     }
@@ -254,11 +251,7 @@ impl<S: SecretStore + Send + Sync + 'static> TokenManager for DefaultTokenManage
         if let Some(token_set) = self.get_token_set(service, account).await? {
             // Check if the access token is still valid
             if !self.is_token_expired(&token_set.access_token) {
-                tracing::debug!(
-                    "Using cached access token for {}/{}",
-                    service,
-                    account
-                );
+                tracing::debug!("Using cached access token for {}/{}", service, account);
                 return Ok(token_set.access_token);
             }
 
@@ -335,12 +328,10 @@ impl<S: SecretStore + Send + Sync + 'static> TokenManager for DefaultTokenManage
         if let Some(expiry_secret) = self
             .get_credential(service, account, CredentialType::TokenExpiry)
             .await?
+            && let Ok(timestamp) = expiry_secret.expose().parse::<i64>()
+            && let Some(expires_at) = chrono::DateTime::from_timestamp(timestamp, 0)
         {
-            if let Ok(timestamp) = expiry_secret.expose().parse::<i64>() {
-                if let Some(expires_at) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                    token = token.with_expiry(expires_at);
-                }
-            }
+            token = token.with_expiry(expires_at);
         }
 
         // Try to get scopes
@@ -388,25 +379,15 @@ impl<S: SecretStore + Send + Sync + 'static> TokenManager for DefaultTokenManage
         // Store expiry if available
         if let Some(expires_at) = token_set.access_token.expires_at {
             let timestamp = expires_at.timestamp().to_string();
-            self.store_credential(
-                service,
-                account,
-                CredentialType::TokenExpiry,
-                &timestamp,
-            )
-            .await?;
+            self.store_credential(service, account, CredentialType::TokenExpiry, &timestamp)
+                .await?;
         }
 
         // Store scopes if available
         if !token_set.access_token.scopes.is_empty() {
             let scopes_str = token_set.access_token.scopes.join(",");
-            self.store_credential(
-                service,
-                account,
-                CredentialType::TokenScopes,
-                &scopes_str,
-            )
-            .await?;
+            self.store_credential(service, account, CredentialType::TokenScopes, &scopes_str)
+                .await?;
         }
 
         // Store refresh token if available
@@ -451,13 +432,13 @@ impl<S: SecretStore + Send + Sync + 'static> TokenManager for DefaultTokenManage
         account: &AccountId,
     ) -> Result<TokenInfo, TokenError> {
         // Get the current token set
-        let token_set = self
-            .get_token_set(service, account)
-            .await?
-            .ok_or_else(|| TokenError::NotFound {
-                service: service.to_string(),
-                account: account.to_string(),
-            })?;
+        let token_set =
+            self.get_token_set(service, account)
+                .await?
+                .ok_or_else(|| TokenError::NotFound {
+                    service: service.to_string(),
+                    account: account.to_string(),
+                })?;
 
         // Build token info from what we know
         let active = !self.is_token_expired(&token_set.access_token);
@@ -500,8 +481,8 @@ mod tests {
         let account = AccountId::new("test");
 
         // Create and store a token set
-        let token = Token::new("test-access-token")
-            .with_expiry(Utc::now() + chrono::Duration::hours(1));
+        let token =
+            Token::new("test-access-token").with_expiry(Utc::now() + chrono::Duration::hours(1));
         let token_set = TokenSet::new(token).with_refresh_token("test-refresh-token");
 
         manager
@@ -533,8 +514,7 @@ mod tests {
         let account = AccountId::new("test");
 
         // Store a valid token
-        let token = Token::new("valid-token")
-            .with_expiry(Utc::now() + chrono::Duration::hours(1));
+        let token = Token::new("valid-token").with_expiry(Utc::now() + chrono::Duration::hours(1));
         let token_set = TokenSet::new(token);
 
         manager

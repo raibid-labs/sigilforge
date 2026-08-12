@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Sigilforge! This guide will help 
 
 ### Rust Toolchain
 
-Sigilforge requires **Rust 1.83 or later** with the 2024 edition enabled.
+Sigilforge requires **Rust 1.85 or later** (the minimum that stabilizes the 2024 edition).
 
 Install or update Rust using [rustup](https://rustup.rs/):
 
@@ -18,7 +18,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup update stable
 rustup default stable
 
-# Verify version (should be 1.83+)
+# Verify version (should be 1.85+)
 rustc --version
 ```
 
@@ -132,7 +132,22 @@ just test-keyring
 
 # Test OAuth functionality
 just test-oauth
+
+# Test GitHub App authentication
+just test-github-app
 ```
+
+The `sigilforge-core` features are:
+
+| Feature | Enables |
+|---------|---------|
+| `keyring-store` (default) | `KeyringStore` over the OS keyring |
+| `oauth` | OAuth2 flows, `DefaultTokenManager`, `DefaultReferenceResolver` |
+| `github-app` | GitHub App JWT signing and installation tokens |
+| `full` | all of the above |
+
+CI runs `--all-features`, so a change that only compiles under one feature
+combination will fail there.
 
 ### Running Integration Tests
 
@@ -161,7 +176,9 @@ Sigilforge uses **rustfmt** for consistent code formatting. Configuration is in 
 
 - Edition: 2024
 - Max line width: 100 characters
-- Comments are normalized and wrapped
+
+The configuration uses only stable rustfmt options so `cargo fmt` works on the
+stable toolchain.
 
 **Format your code before committing:**
 

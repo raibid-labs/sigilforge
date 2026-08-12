@@ -1,262 +1,176 @@
 # Next Steps for Sigilforge Development
 
-This document outlines concrete next tasks for continuing Sigilforge development. It is intended to be self-contained so future Claude sessions can pick up work without seeing the original initialization prompt.
+This document lists what is actually built and what is worth doing next. It is
+meant to be self-contained, so a session can pick up work without other context.
 
-## Current State
+For the phase-by-phase history, see [ROADMAP.md](ROADMAP.md).
 
-The scaffolding is complete:
+## Current State (v0.3.0)
 
-- **sigilforge-core**: Core types (`ServiceId`, `AccountId`, `Account`, `CredentialRef`), traits (`SecretStore`, `TokenManager`, `ReferenceResolver`), and an in-memory `MemoryStore` implementation.
-- **sigilforge-daemon**: Placeholder daemon with configuration loading.
-- **sigilforge-cli**: CLI with subcommands defined (`add-account`, `list-accounts`, `get-token`, `remove-account`, `resolve`, `daemon`), but all handlers are stubs.
-- **docs/**: Architecture, roadmap, and interface documentation.
+Phases 0-3 are complete and Phase 4.5 (GitHub App auth) has landed. This is a
+working credential manager, not a scaffold.
 
-## Phase 1: Basic Storage and Account Model
+### What works
 
-### 1.1 Implement Account Persistence
+| Area | State |
+|------|-------|
+| Domain model | `ServiceId`, `AccountId`, `Account`, `CredentialRef`, `CredentialType` |
+| Storage | `MemoryStore` and `KeyringStore` behind the `SecretStore` trait |
+| Account metadata | `AccountStore`, persisted to `~/.config/sigilforge/accounts.json` |
+| OAuth | Auth code + PKCE and device code flows; `DefaultTokenManager` refreshes |
+| GitHub App | RS256 JWT -> installation token, cached; `GitHubAppTokenManager` |
+| Daemon | JSON-RPC 2.0 over Unix socket; handlers wired to real implementations |
+| CLI | `add-account`, `list-accounts`, `get-token`, `remove-account`, `resolve`, `github-app *` |
+| Client library | `sigilforge-client` (`DaemonClient`) |
+| TUI | `sigilforge-tui`, plus a `scarab-sigilforge` status-bar plugin |
+| Resolution | `auth://` URIs resolve, including GitHub App installation tokens |
 
-Create an `AccountStore` that persists account metadata to disk:
+### What is not built
 
-```
-sigilforge-core/src/account_store.rs
-```
+| Gap | Where |
+|-----|-------|
+| `vals:ref+...` resolution | `resolve.rs` returns `ExternalError("not yet implemented")` |
+| `EncryptedFileStore` (ROPS/SOPS) | Not started; documented in ARCHITECTURE.md as a future backend |
+| `KeyringStore::list_keys` | Returns `BackendError`; platform keyrings cannot enumerate |
+| Daemon-side GitHub App RPC | The CLI's `github-app` commands talk to core directly |
+| Providers beyond GitHub/Spotify/Google | `ProviderRegistry::with_defaults` |
 
-Requirements:
-- Load/save accounts from `~/.config/sigilforge/accounts.json` (or platform equivalent)
-- CRUD operations: `add_account`, `get_account`, `list_accounts`, `remove_account`
-- Use `directories` crate for platform paths
+### Known rough edges
 
-### 1.2 Wire CLI to Account Store
+These are real, small, and worth fixing:
 
-Update CLI handlers in `sigilforge-cli/src/main.rs`:
-- `add-account`: Create account metadata (without OAuth yet)
-- `list-accounts`: Read from account store
-- `remove-account`: Delete account and associated secrets
+1. **`token_expiry` has two encodings.** `DefaultTokenManager::store_token_set`
+   writes a Unix timestamp; the CLI's direct `add-account` path writes RFC 3339.
+   A token written by one and read by the other looks like it has no expiry. The
+   GitHub App code reads both as a workaround (`github_app::token::parse_expiry`);
+   the underlying inconsistency should be settled on one format.
 
-### 1.3 OS Keyring Integration
+2. **`fallback_get_token` cannot refresh.** `sigilforge-cli/src/main.rs` warns
+   "Refresh not yet implemented" and tells the user to re-authenticate, even
+   though `DefaultTokenManager` can refresh. The direct-mode path should use it.
 
-Implement `KeyringStore` in sigilforge-core:
+3. **`KeyringStore::try_new` does not prove the keyring works.** It only
+   constructs an `Entry`. On a headless machine it succeeds and later reads fail,
+   which is why `create_store`'s documented "fall back to memory if unavailable"
+   does not actually trigger. `GitHubAppTokenManager::register` works around this
+   by reading the key back after writing; a `probe()` on the store would fix it
+   generally.
 
-```rust
-// sigilforge-core/src/store/keyring.rs
-pub struct KeyringStore { ... }
+4. **`sigilforge daemon` (CLI subcommand) is a stub.** It prints
+   `[stub] Running daemon in foreground...` and sleeps. The real daemon is the
+   separate `sigilforged` binary.
 
-impl SecretStore for KeyringStore { ... }
-```
+5. **`sigilforge-tui/src/app.rs`** has a `TODO: Implement proper daemon RPC call`.
 
-Use the `keyring` crate. Handle platform differences gracefully.
+## Suggested next work
 
-## Phase 2: OAuth Flows
+### 1. Finish Phase 4: vals and encrypted file storage
 
-### 2.1 Provider Configuration
+`ResolverConfig` already has `enable_vals`, `vals_path`, and `cache_ttl_secs`
+fields that nothing reads.
 
-Create a provider registry:
+- Shell out to `vals` for `vals:ref+...` references
+- Honour `cache_ttl_secs` for resolved values
+- Implement `EncryptedFileStore` over ROPS (Rust-native) with a SOPS CLI fallback
 
-```
-sigilforge-core/src/provider.rs
-```
+### 2. Unify token expiry storage
 
-Define `ProviderConfig`:
-- OAuth endpoints (authorize, token, revoke)
-- Default scopes
-- Client ID/secret storage strategy
+Pick RFC 3339 (it is self-describing and already what the CLI writes), migrate
+`DefaultTokenManager`, and read both formats for one release.
 
-Start with 2-3 providers:
-- **GitHub**: Simple OAuth2 with PKCE
-- **Spotify**: Standard OAuth2
-- **Google**: OAuth2 + refresh tokens
+### 3. Expose GitHub App operations over the daemon
 
-### 2.2 OAuth Flow Implementation
+`get_token` currently only understands OAuth accounts. Teaching the daemon about
+`github-app` would let several processes share one cached installation token
+instead of each minting its own.
 
-Use `oauth2` crate to implement:
+### 4. More OAuth providers
 
-1. **Authorization Code + PKCE** (primary):
-   - Generate PKCE verifier
-   - Open browser for authorization
-   - Listen on localhost for callback
-   - Exchange code for tokens
+`ProviderRegistry::with_defaults` covers GitHub, Spotify, and Google. Microsoft
+Graph, Reddit, and Discord are the obvious next ones.
 
-2. **Device Code** (for headless):
-   - Request device code
-   - Display user code
-   - Poll for completion
+## Build and Verification
 
-```
-sigilforge-core/src/oauth/
-├── mod.rs
-├── pkce.rs
-└── device_code.rs
-```
+The `justfile` has recipes for everything CI runs:
 
-### 2.3 Token Manager Implementation
-
-Implement `TokenManager` trait:
-
-```rust
-pub struct DefaultTokenManager<S: SecretStore> {
-    store: S,
-    providers: ProviderRegistry,
-}
-```
-
-Logic for `ensure_access_token`:
-1. Check stored token expiry
-2. If expired, use refresh token
-3. If no refresh token or refresh fails, return error indicating re-auth needed
-
-## Phase 3: Daemon and IPC
-
-### 3.1 Socket API
-
-Implement JSON-RPC over Unix socket:
-
-```
-sigilforge-daemon/src/api/
-├── mod.rs
-├── server.rs
-└── handlers.rs
+```bash
+just ci        # fmt-check + clippy + test
+just build     # cargo build
+just test      # cargo test --workspace
+just clippy    # cargo clippy --workspace -- -D warnings
 ```
 
-Methods:
-- `get_token(service, account)` → token string
-- `list_accounts()` → account list
-- `add_account(service, account, scopes)` → starts OAuth flow
-- `resolve(reference)` → resolved value
+CI is stricter than `just clippy` - it runs:
 
-### 3.2 CLI as Daemon Client
-
-Update CLI to communicate with daemon:
-- Check if daemon is running
-- Send requests over socket
-- Fall back to direct library calls if daemon unavailable
-
-## Phase 4: Reference Resolution
-
-### 4.1 Implement `ReferenceResolver`
-
-```rust
-pub struct DefaultResolver<T: TokenManager> {
-    token_manager: T,
-    config: ResolverConfig,
-}
+```bash
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo test --workspace --doc
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
-Handle `auth://` URIs:
-- Parse with `CredentialRef::from_auth_uri`
-- Route to `TokenManager` for tokens
-- Route to `SecretStore` for API keys
+Doc tests run in CI, so examples in `///` comments must compile.
 
-### 4.2 Optional vals Integration
+### System dependencies
 
-If `enable_vals` is true:
-- Shell out to `vals` binary for `vals:ref+...` references
-- Cache results based on `cache_ttl_secs`
+`KeyringStore` uses the Secret Service on Linux, which needs `libdbus-1-dev` and
+`pkg-config` at build time. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Layout
+
+```text
+sigilforge/
+├── sigilforge-core/
+│   └── src/
+│       ├── lib.rs
+│       ├── model.rs            # ServiceId, AccountId, CredentialRef, CredentialType
+│       ├── error.rs
+│       ├── store/              # SecretStore trait, memory + keyring backends
+│       ├── token.rs            # Token, TokenSet, TokenManager trait
+│       ├── token_manager.rs    # DefaultTokenManager (OAuth)
+│       ├── resolve.rs          # ReferenceResolver, DefaultReferenceResolver
+│       ├── account_store.rs
+│       ├── provider.rs
+│       ├── oauth/              # pkce.rs, device_code.rs
+│       └── github_app/         # mod.rs, jwt.rs, token.rs, argocd.rs
+├── sigilforge-daemon/          # JSON-RPC server (sigilforged)
+├── sigilforge-cli/             # sigilforge binary; github_app.rs holds App commands
+├── sigilforge-client/          # DaemonClient for Rust consumers
+├── sigilforge-tui/
+├── scarab-sigilforge/
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── INTERFACES.md
+    ├── ROADMAP.md
+    ├── GITHUB_APP.md           # GitHub App setup and Argo CD integration
+    ├── NEXT_STEPS.md
+    ├── TROUBLESHOOTING.md
+    ├── RELEASE.md
+    └── STRUCTURE.md
+```
 
 ## Integration with Scryforge
 
-Scryforge will integrate with Sigilforge in two modes:
+Two modes, both working today.
 
-### Library Mode (Embedded)
+### Library mode (embedded)
 
-```rust
+```rust,ignore
 use sigilforge_core::{TokenManager, DefaultTokenManager, KeyringStore};
 
-let store = KeyringStore::new();
+let store = KeyringStore::try_new("sigilforge")?;
 let manager = DefaultTokenManager::new(store, providers);
 let token = manager.ensure_access_token(&service, &account).await?;
 ```
 
-### Daemon Mode (IPC)
+### Daemon mode (IPC)
 
-```rust
+```rust,ignore
 use sigilforge_client::DaemonClient;
 
 let client = DaemonClient::connect().await?;
 let token = client.get_token("spotify", "personal").await?;
 ```
 
-The daemon mode is preferred for:
-- Sharing tokens across multiple applications
-- Centralized token refresh
-- Avoiding keyring access from multiple processes
-
-## Testing Strategy
-
-### Unit Tests
-
-Each module should have tests:
-- `model.rs`: Parsing, serialization
-- `store.rs`: MemoryStore operations
-- `token.rs`: Expiry logic
-- `resolve.rs`: URI parsing
-
-### Integration Tests
-
-```
-sigilforge-core/tests/
-├── account_lifecycle.rs
-├── token_refresh.rs
-└── reference_resolution.rs
-```
-
-Use mock OAuth servers for OAuth flow testing.
-
-## Build and Verification
-
-```bash
-# Build all crates
-cargo build --workspace
-
-# Run tests
-cargo test --workspace
-
-# Run clippy
-cargo clippy --workspace -- -D warnings
-
-# Format check
-cargo fmt --check
-```
-
-## File Structure (Target State)
-
-```
-sigilforge/
-├── Cargo.toml
-├── sigilforge-core/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs
-│       ├── model.rs
-│       ├── error.rs
-│       ├── store/
-│       │   ├── mod.rs
-│       │   ├── memory.rs
-│       │   └── keyring.rs
-│       ├── token.rs
-│       ├── resolve.rs
-│       ├── account_store.rs
-│       ├── provider.rs
-│       └── oauth/
-│           ├── mod.rs
-│           ├── pkce.rs
-│           └── device_code.rs
-├── sigilforge-daemon/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs
-│       ├── config.rs
-│       └── api/
-│           ├── mod.rs
-│           ├── server.rs
-│           └── handlers.rs
-├── sigilforge-cli/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs
-│       └── client.rs
-└── docs/
-    ├── ARCHITECTURE.md
-    ├── ROADMAP.md
-    ├── INTERFACES.md
-    └── NEXT_STEPS.md
-```
+Daemon mode is preferred for sharing tokens across processes, centralising
+refresh, and avoiding concurrent keyring access.

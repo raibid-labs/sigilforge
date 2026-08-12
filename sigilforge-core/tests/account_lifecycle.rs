@@ -102,9 +102,11 @@ fn test_list_accounts_filtered_by_service() {
         2,
         "Should return 2 spotify accounts"
     );
-    assert!(spotify_accounts
-        .iter()
-        .all(|a| a.service.as_str() == "spotify"));
+    assert!(
+        spotify_accounts
+            .iter()
+            .all(|a| a.service.as_str() == "spotify")
+    );
 
     let github_accounts = store
         .list_accounts(Some(&ServiceId::new("github")))
@@ -141,10 +143,7 @@ fn test_get_account_not_found() {
     let (store, _temp) = test_store();
 
     let retrieved = store
-        .get_account(
-            &ServiceId::new("nonexistent"),
-            &AccountId::new("account"),
-        )
+        .get_account(&ServiceId::new("nonexistent"), &AccountId::new("account"))
         .unwrap();
 
     assert!(retrieved.is_none(), "Account should not exist");
@@ -172,12 +171,12 @@ fn test_remove_account_happy_path() {
 fn test_remove_nonexistent_account_fails() {
     let (store, _temp) = test_store();
 
-    let result = store.remove_account(
-        &ServiceId::new("spotify"),
-        &AccountId::new("nonexistent"),
-    );
+    let result = store.remove_account(&ServiceId::new("spotify"), &AccountId::new("nonexistent"));
 
-    assert!(result.is_err(), "Should fail when removing nonexistent account");
+    assert!(
+        result.is_err(),
+        "Should fail when removing nonexistent account"
+    );
     assert!(
         matches!(result, Err(AccountStoreError::NotFound { .. })),
         "Error should be NotFound"
@@ -253,10 +252,7 @@ fn test_update_last_used() {
 fn test_update_last_used_nonexistent_account() {
     let (store, _temp) = test_store();
 
-    let result = store.update_last_used(
-        &ServiceId::new("spotify"),
-        &AccountId::new("nonexistent"),
-    );
+    let result = store.update_last_used(&ServiceId::new("spotify"), &AccountId::new("nonexistent"));
 
     assert!(result.is_err(), "Should fail for nonexistent account");
     assert!(
@@ -281,7 +277,11 @@ fn test_multiple_accounts_same_service() {
         .list_accounts(Some(&ServiceId::new("spotify")))
         .unwrap();
 
-    assert_eq!(accounts.len(), 3, "Should support multiple accounts per service");
+    assert_eq!(
+        accounts.len(),
+        3,
+        "Should support multiple accounts per service"
+    );
 
     let account_ids: Vec<_> = accounts.iter().map(|a| a.id.as_str()).collect();
     assert!(account_ids.contains(&"personal"));
@@ -294,7 +294,10 @@ fn test_account_key_generation() {
     let account = test_account("spotify", "personal", vec![]);
     let key = account.key();
 
-    assert_eq!(key, "spotify/personal", "Should generate correct key format");
+    assert_eq!(
+        key, "spotify/personal",
+        "Should generate correct key format"
+    );
 }
 
 #[test]

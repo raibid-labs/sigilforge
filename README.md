@@ -67,6 +67,21 @@ sigilforge list-accounts
 sigilforge get-token spotify personal
 ```
 
+**Argo CD / CI** using a GitHub App for private repositories:
+```bash
+# Register once (App ID, installation ID, and PEM from the GitHub App settings page)
+sigilforge github-app register raibid-labs \
+    --app-id 1234567 --installation-id 89012345 --key-file app.private-key.pem
+
+# A fresh, hour-long installation token whenever you need one
+sigilforge github-app token raibid-labs
+
+# Or hand the credential to Argo CD
+sigilforge github-app argocd-secret raibid-labs \
+    --repo-url https://github.com/raibid-labs/raibid-fish.git | kubectl apply -f -
+```
+See [docs/GITHUB_APP.md](docs/GITHUB_APP.md).
+
 ## Problems It Solves
 
 1. **Centralized Auth**: Applications don't re-implement OAuth flows; they ask Sigilforge for tokens.
@@ -93,6 +108,7 @@ sigilforge/
     ├── ARCHITECTURE.md     # System design and components
     ├── ROADMAP.md          # Development phases
     ├── INTERFACES.md       # Trait definitions and API contracts
+    ├── GITHUB_APP.md       # GitHub App setup and Argo CD integration
     ├── NEXT_STEPS.md       # Concrete next tasks for development
     ├── RELEASE.md          # Release process and versioning
     └── versions/           # Versioned documentation snapshots

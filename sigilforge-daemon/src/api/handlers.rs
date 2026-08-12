@@ -1,14 +1,12 @@
 //! JSON-RPC API handlers for the daemon.
 
 use sigilforge_core::{
+    DefaultReferenceResolver, ReferenceResolver, TokenManager,
     account_store::AccountStore,
     model::{Account, AccountId, ServiceId},
-    store::{create_store, SecretStore},
-    token_manager::DefaultTokenManager,
     provider::ProviderRegistry,
-    TokenManager,
-    DefaultReferenceResolver,
-    ReferenceResolver,
+    store::{SecretStore, create_store},
+    token_manager::DefaultTokenManager,
 };
 use std::sync::Arc;
 
@@ -98,10 +96,8 @@ impl ApiState {
 
         // Clone references for resolver (store is moved, so we need to create another)
         let resolver_store = create_store(true);
-        let resolver_token_manager = DefaultTokenManager::new(
-            create_store(true),
-            ProviderRegistry::with_defaults(),
-        );
+        let resolver_token_manager =
+            DefaultTokenManager::new(create_store(true), ProviderRegistry::with_defaults());
         let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
 
         Ok(Self {
@@ -119,10 +115,8 @@ impl ApiState {
         let token_manager = DefaultTokenManager::new(store, providers);
 
         let resolver_store = create_store(false);
-        let resolver_token_manager = DefaultTokenManager::new(
-            create_store(false),
-            ProviderRegistry::new(),
-        );
+        let resolver_token_manager =
+            DefaultTokenManager::new(create_store(false), ProviderRegistry::new());
         let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
 
         Self {
@@ -269,7 +263,10 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
                 // If no token found, return a more helpful error
                 Err(ErrorObject::owned(
                     ErrorCode::InternalError.code(),
-                    format!("Failed to get token: {}. You may need to re-authenticate.", e),
+                    format!(
+                        "Failed to get token: {}. You may need to re-authenticate.",
+                        e
+                    ),
                     None::<()>,
                 ))
             }
@@ -297,9 +294,7 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
             })
             .collect();
 
-        Ok(ListAccountsResponse {
-            accounts: filtered,
-        })
+        Ok(ListAccountsResponse { accounts: filtered })
     }
 
     async fn add_account(
@@ -308,13 +303,12 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
         account: String,
         scopes: Vec<String>,
     ) -> RpcResult<AddAccountResponse> {
-        info!("RPC: add_account({}/{}, scopes: {:?})", service, account, scopes);
-
-        let new_account = Account::new(
-            ServiceId::new(&service),
-            AccountId::new(&account),
-            scopes,
+        info!(
+            "RPC: add_account({}/{}, scopes: {:?})",
+            service, account, scopes
         );
+
+        let new_account = Account::new(ServiceId::new(&service), AccountId::new(&account), scopes);
 
         if let Err(e) = self.state.accounts.add_account(new_account) {
             return Err(match e {
@@ -358,7 +352,10 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
         if !account_exists {
             return Err(ErrorObject::owned(
                 ErrorCode::InvalidParams.code(),
-                format!("Account {}/{} not found", cred_ref.service, cred_ref.account),
+                format!(
+                    "Account {}/{} not found",
+                    cred_ref.service, cred_ref.account
+                ),
                 None::<()>,
             ));
         }
@@ -401,10 +398,14 @@ impl SigilforgeApiServer for SigilforgeApiImpl {
                 .await
             {
                 Ok(token) => {
-                    let expires_soon = token.expires_at.map_or(false, |exp| {
-                        exp.signed_duration_since(now) < expiry_threshold
-                    });
-                    (true, expires_soon, token.expires_at.map(|dt| dt.to_rfc3339()))
+                    let expires_soon = token
+                        .expires_at
+                        .is_some_and(|exp| exp.signed_duration_since(now) < expiry_threshold);
+                    (
+                        true,
+                        expires_soon,
+                        token.expires_at.map(|dt| dt.to_rfc3339()),
+                    )
                 }
                 Err(_) => {
                     // Token retrieval failed - mark as invalid

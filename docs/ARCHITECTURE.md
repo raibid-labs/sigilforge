@@ -27,6 +27,11 @@ sigilforge/
 │       │   ├── traits.rs       # TokenManager trait
 │       │   ├── oauth.rs        # OAuth2 flow implementations
 │       │   └── providers/      # Provider-specific configs
+│       ├── github_app/         # GitHub App authentication
+│       │   ├── mod.rs          # GitHubAppCredential, errors
+│       │   ├── jwt.rs          # RS256 JWT claims and signing
+│       │   ├── token.rs        # Installation-token minting + cache
+│       │   └── argocd.rs       # Argo CD repository Secret rendering
 │       └── resolve/            # Reference resolution
 │           ├── mod.rs
 │           ├── traits.rs       # ReferenceResolver trait
@@ -70,6 +75,7 @@ The core library contains all domain logic and is designed to be embeddable in o
 | `model` | Domain types: ServiceId, AccountId, Account, CredentialRef, Token |
 | `store` | Secret storage abstraction with multiple backends |
 | `auth` | OAuth2 flow execution and token lifecycle management |
+| `github_app` | GitHub App JWT signing, installation-token minting, Argo CD manifest rendering |
 | `resolve` | Reference resolution for `auth://` URIs and vals-style refs |
 
 **Key design principle**: Core is async-runtime-agnostic where possible. Traits use `async_trait` for async methods but don't mandate a specific executor.
@@ -94,6 +100,7 @@ The CLI provides human-friendly commands:
 - `get-token <service> <account>` - Print a fresh access token
 - `remove-account <service> <account>` - Remove stored credentials
 - `status` - Show daemon status and account health
+- `github-app <register|list|token|argocd-secret|remove>` - GitHub App credentials
 
 **Modes**: CLI can operate in two modes:
 1. **Daemon mode** (default): Connects to running daemon via socket
@@ -132,10 +139,20 @@ Sigilforge supports multiple storage backends through the `SecretStore` trait:
 
 #### KeyringStore
 - Uses OS keyring via the `keyring` crate
-- Linux: libsecret/Secret Service
+- Linux: Secret Service over D-Bus (needs `libdbus-1-dev` at build time)
 - macOS: Keychain
 - Windows: Credential Manager
-- Best for runtime secrets (refresh tokens, API keys)
+- Best for runtime secrets (refresh tokens, API keys, GitHub App private keys)
+
+> The `keyring` crate ships **no** credential store in its default features and
+> silently falls back to an in-process mock. The workspace dependency selects
+> `sync-secret-service`, `apple-native`, and `windows-native` explicitly; without
+> them nothing persists across process boundaries.
+>
+> `KeyringStore::try_new` only constructs an `Entry` - it does not prove the
+> platform keyring is reachable, so `create_store`'s fallback to `MemoryStore`
+> does not trigger on a headless machine. Code that must persist should read
+> back after writing, as `GitHubAppTokenManager::register` does.
 
 #### EncryptedFileStore
 - ROPS (Rust-native) or SOPS (via CLI) encrypted YAML/JSON files
@@ -235,6 +252,49 @@ Used for CLI-only environments or services that support it:
      │<───────────────│                │                │
      │ Success        │                │                │
 ```
+
+### GitHub App Authentication (not an OAuth flow)
+
+GitHub Apps authenticate machines, not users. There is no authorization code, no
+browser, and no refresh token, so neither flow above applies:
+
+```text
+┌──────────┐                    ┌──────────┐              ┌──────────┐
+│ Consumer │                    │ Sigil-   │              │  GitHub  │
+│ (Argo CD,│                    │ forge    │              │   API    │
+│  CI)     │                    │          │              │          │
+└────┬─────┘                    └────┬─────┘              └────┬─────┘
+     │                               │                         │
+     │ auth://github-app/{acct}/     │                         │
+     │   installation_token          │                         │
+     │──────────────────────────────>│                         │
+     │                               │                         │
+     │                     ┌─────────┴─────────┐               │
+     │                     │ cached token      │               │
+     │                     │ > 5 min of life?  │               │
+     │                     └─────────┬─────────┘               │
+     │                        yes │  │ no                      │
+     │<───────────────────────────┘  │                         │
+     │  cached token                 │                         │
+     │                               │ sign RS256 JWT with     │
+     │                               │ the App's private key   │
+     │                               │                         │
+     │                               │ POST /app/installations │
+     │                               │   /{id}/access_tokens   │
+     │                               │────────────────────────>│
+     │                               │                         │
+     │                               │<────────────────────────│
+     │                               │ ghs_..., expires_at ~1h │
+     │<──────────────────────────────│                         │
+     │  fresh token (and cached)     │                         │
+```
+
+The renewal credential is the private key, which signs a fresh assertion each
+time - not a refresh token. `GitHubAppTokenManager` is therefore a sibling of
+`DefaultTokenManager` rather than a configuration of it, though it implements the
+same `TokenManager` trait so it composes with existing generic code.
+
+See [GITHUB_APP.md](GITHUB_APP.md).
 
 ## Token Lifecycle
 

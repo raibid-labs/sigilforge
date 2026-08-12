@@ -172,10 +172,13 @@ mod tests {
         };
 
         // Use a timestamp-based key to avoid conflicts
-        let test_key = format!("test/{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let test_key = format!(
+            "test/{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         let secret = Secret::new("test-value");
 
         // Note: On headless Linux systems without a proper keyring daemon (e.g., CI environments),
@@ -185,7 +188,10 @@ mod tests {
 
         // Test set (should not error)
         if let Err(e) = store.set(&test_key, &secret).await {
-            eprintln!("Keyring set failed ({}), skipping test - keyring backend not fully functional", e);
+            eprintln!(
+                "Keyring set failed ({}), skipping test - keyring backend not fully functional",
+                e
+            );
             return;
         }
 
@@ -203,7 +209,9 @@ mod tests {
             Ok(None) => {
                 // Keyring backend accepted the set but didn't persist
                 // This happens on headless systems without keyring daemon
-                eprintln!("Keyring set succeeded but get returned None - keyring daemon may not be running");
+                eprintln!(
+                    "Keyring set succeeded but get returned None - keyring daemon may not be running"
+                );
                 eprintln!("This is expected on headless systems. Skipping remainder of test.");
                 // Clean up attempt (may also fail)
                 let _ = store.delete(&test_key).await;
@@ -225,8 +233,15 @@ mod tests {
             Err(_) => return,
         };
 
-        let result = store.get("nonexistent/key").await.unwrap();
-        assert!(result.is_none());
+        // `try_new` only constructs an `Entry`; it does not prove the platform
+        // keyring is reachable. On a headless runner with no D-Bus session the
+        // read fails at the backend rather than returning "no such entry", and
+        // that is not a failure of this code.
+        match store.get("nonexistent/key").await {
+            Ok(result) => assert!(result.is_none()),
+            Err(StoreError::BackendError { .. }) | Err(StoreError::KeyringUnavailable { .. }) => {}
+            Err(e) => panic!("unexpected error: {}", e),
+        }
     }
 
     #[tokio::test]

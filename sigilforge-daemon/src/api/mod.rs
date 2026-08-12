@@ -7,6 +7,9 @@ pub mod handlers;
 pub mod server;
 
 #[allow(unused_imports)]
-pub use handlers::{ApiState, AccountInfo, AddAccountResponse, GetTokenResponse, ListAccountsResponse, ResolveResponse};
+pub use handlers::{
+    AccountInfo, AddAccountResponse, ApiState, GetTokenResponse, ListAccountsResponse,
+    ResolveResponse,
+};
 #[allow(unused_imports)]
-pub use server::{start_server, ServerHandle};
+pub use server::{ServerHandle, start_server};

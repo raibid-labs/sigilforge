@@ -13,21 +13,27 @@
 //!
 //! # Get a fresh access token
 //! sigilforge get-token spotify personal
+//!
+//! # Register a GitHub App and print an installation token
+//! sigilforge github-app register raibid-labs \
+//!     --app-id 1234567 --installation-id 89012345 --key-file app.private-key.pem
+//! sigilforge github-app token raibid-labs
 //! ```
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sigilforge_core::{
+    AccountId, CredentialType, ServiceId,
     account_store::AccountStore,
     oauth::pkce::PkceFlow,
     provider::ProviderRegistry,
     store::{KeyringStore, MemoryStore, SecretStore},
-    AccountId, CredentialType, ServiceId,
 };
 use tracing::{info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 mod client;
+mod github_app;
 
 #[derive(Parser)]
 #[command(name = "sigilforge")]
@@ -96,6 +102,12 @@ enum Commands {
         reference: String,
     },
 
+    /// Manage GitHub App credentials (machine access to private repos)
+    GithubApp {
+        #[command(subcommand)]
+        command: github_app::GithubAppCommands,
+    },
+
     /// Start the daemon in foreground (for debugging)
     Daemon,
 }
@@ -107,36 +119,34 @@ async fn main() -> Result<()> {
     init_logging(cli.verbose);
 
     match cli.command {
-        Commands::AddAccount { service, account, scopes } => {
-            add_account(&service, &account, scopes.as_deref()).await
-        }
-        Commands::ListAccounts { service } => {
-            list_accounts(service.as_deref()).await
-        }
-        Commands::GetToken { service, account, format } => {
-            get_token(&service, &account, &format).await
-        }
-        Commands::RemoveAccount { service, account, force } => {
-            remove_account(&service, &account, force).await
-        }
-        Commands::Resolve { reference } => {
-            resolve_reference(&reference).await
-        }
-        Commands::Daemon => {
-            run_daemon_foreground().await
-        }
+        Commands::AddAccount {
+            service,
+            account,
+            scopes,
+        } => add_account(&service, &account, scopes.as_deref()).await,
+        Commands::ListAccounts { service } => list_accounts(service.as_deref()).await,
+        Commands::GetToken {
+            service,
+            account,
+            format,
+        } => get_token(&service, &account, &format).await,
+        Commands::RemoveAccount {
+            service,
+            account,
+            force,
+        } => remove_account(&service, &account, force).await,
+        Commands::Resolve { reference } => resolve_reference(&reference).await,
+        Commands::GithubApp { command } => github_app::run(command).await,
+        Commands::Daemon => run_daemon_foreground().await,
     }
 }
 
 fn init_logging(verbose: bool) {
     let default_level = if verbose { "debug" } else { "info" };
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
-    fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .init();
+    fmt().with_env_filter(filter).with_target(false).init();
 }
 
 async fn add_account(service: &str, account: &str, scopes: Option<&str>) -> Result<()> {
@@ -209,12 +219,7 @@ async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>
     println!("  Scopes: {}", scope_list.join(", "));
 
     // Create PKCE flow
-    let flow = PkceFlow::new(
-        provider.clone(),
-        client_id,
-        client_secret,
-        redirect_uri,
-    )?;
+    let flow = PkceFlow::new(provider.clone(), client_id, client_secret, redirect_uri)?;
 
     // Build authorization URL
     let (auth_url, csrf_state) = flow.build_authorization_url(scope_list.clone());
@@ -254,7 +259,8 @@ async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>
 
     // Store access token
     let access_key = format!("sigilforge/{}/{}/access_token", service, account);
-    let access_secret = sigilforge_core::store::Secret::new(token_set.access_token.access_token.expose());
+    let access_secret =
+        sigilforge_core::store::Secret::new(token_set.access_token.access_token.expose());
     store.set(&access_key, &access_secret).await?;
 
     // Store refresh token if available
@@ -299,15 +305,11 @@ async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>
 fn open_browser(url: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
-            .arg(url)
-            .spawn()?;
+        std::process::Command::new("xdg-open").arg(url).spawn()?;
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(url)
-            .spawn()?;
+        std::process::Command::new("open").arg(url).spawn()?;
     }
     #[cfg(target_os = "windows")]
     {
@@ -419,7 +421,10 @@ async fn fallback_get_token(service: &str, account: &str, format: &str) -> Resul
     let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {
         Ok(s) => Box::new(s),
         Err(e) => {
-            return Err(anyhow::anyhow!("Keyring unavailable: {}. Cannot retrieve tokens.", e));
+            return Err(anyhow::anyhow!(
+                "Keyring unavailable: {}. Cannot retrieve tokens.",
+                e
+            ));
         }
     };
 
@@ -430,7 +435,10 @@ async fn fallback_get_token(service: &str, account: &str, format: &str) -> Resul
         None => {
             return Err(anyhow::anyhow!(
                 "No token found for {}/{}. Run 'sigilforge add-account {} {}' first.",
-                service, account, service, account
+                service,
+                account,
+                service,
+                account
             ));
         }
     };
@@ -454,12 +462,16 @@ async fn fallback_get_token(service: &str, account: &str, format: &str) -> Resul
                 // TODO: Implement token refresh using refresh_token
                 // For now, warn user to re-authenticate
                 warn!("Token expired. Refresh not yet implemented.");
-                eprintln!("Warning: Token expired at {}. Run 'sigilforge add-account {} {}' to re-authenticate.",
-                    expiry, service, account);
+                eprintln!(
+                    "Warning: Token expired at {}. Run 'sigilforge add-account {} {}' to re-authenticate.",
+                    expiry, service, account
+                );
             } else {
                 return Err(anyhow::anyhow!(
                     "Token expired at {} and no refresh token available. Run 'sigilforge add-account {} {}' to re-authenticate.",
-                    expiry, service, account
+                    expiry,
+                    service,
+                    account
                 ));
             }
         }
@@ -533,7 +545,10 @@ async fn delete_account_secrets(service: &str, account: &str) -> Result<()> {
             Box::new(s)
         }
         Err(e) => {
-            warn!("Keyring unavailable ({}); falling back to memory store (no-op)", e);
+            warn!(
+                "Keyring unavailable ({}); falling back to memory store (no-op)",
+                e
+            );
             Box::new(MemoryStore::new())
         }
     };
@@ -547,6 +562,11 @@ async fn delete_account_secrets(service: &str, account: &str) -> Result<()> {
         CredentialType::ClientId,
         CredentialType::ClientSecret,
         CredentialType::TokenScopes,
+        // GitHub App registrations live under the same key convention.
+        CredentialType::AppId,
+        CredentialType::InstallationId,
+        CredentialType::PrivateKey,
+        CredentialType::InstallationToken,
     ];
 
     for cred_type in &credential_types {
@@ -580,24 +600,44 @@ async fn resolve_reference(reference: &str) -> Result<()> {
 
 async fn fallback_resolve_reference(reference: &str) -> Result<()> {
     use sigilforge_core::CredentialRef;
+    use sigilforge_core::resolve::{ReferenceResolver, ResolvedValue};
 
     let cred_ref = CredentialRef::from_auth_uri(reference)
         .map_err(|e| anyhow::anyhow!("Failed to parse reference '{}': {}", reference, e))?;
+
+    // GitHub App references are minted, not looked up: a raw store read would
+    // return the cached token even when it is about to expire.
+    if cred_ref.service.as_str() == sigilforge_core::GITHUB_APP_SERVICE {
+        let store = KeyringStore::try_new("sigilforge")
+            .map_err(|e| anyhow::anyhow!("Keyring unavailable: {}", e))?;
+        let manager = sigilforge_core::GitHubAppTokenManager::new(store);
+
+        let value = manager.resolve_ref(&cred_ref).await?;
+        match value {
+            ResolvedValue::Multiple(_) => {
+                anyhow::bail!("Reference '{}' resolved to multiple values", reference)
+            }
+            other => println!("{}", other.expose()),
+        }
+
+        return Ok(());
+    }
 
     // Initialize secret store
     let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {
         Ok(s) => Box::new(s),
         Err(e) => {
-            return Err(anyhow::anyhow!("Keyring unavailable: {}. Cannot resolve credentials.", e));
+            return Err(anyhow::anyhow!(
+                "Keyring unavailable: {}. Cannot resolve credentials.",
+                e
+            ));
         }
     };
 
     // Build the key based on credential type
     let key = format!(
         "sigilforge/{}/{}/{}",
-        cred_ref.service,
-        cred_ref.account,
-        cred_ref.credential_type
+        cred_ref.service, cred_ref.account, cred_ref.credential_type
     );
 
     // Retrieve the value
@@ -606,7 +646,9 @@ async fn fallback_resolve_reference(reference: &str) -> Result<()> {
         None => {
             return Err(anyhow::anyhow!(
                 "Credential not found: {}. Run 'sigilforge add-account {} {}' first.",
-                reference, cred_ref.service, cred_ref.account
+                reference,
+                cred_ref.service,
+                cred_ref.account
             ));
         }
     };

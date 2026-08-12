@@ -7,6 +7,9 @@ use std::time::Instant;
 use tracing::{debug, warn};
 
 /// Status of an OAuth account token
+// Variants are matched in the UI layer but not yet constructed until the
+// daemon status RPC is wired in; allow until then.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenStatus {
     /// Token is valid and not expiring soon
@@ -174,10 +177,7 @@ impl App {
         }
 
         let account = &self.accounts[self.selected];
-        self.status_message = format!(
-            "Refreshing {}/{}...",
-            account.service, account.account
-        );
+        self.status_message = format!("Refreshing {}/{}...", account.service, account.account);
 
         match self
             .client

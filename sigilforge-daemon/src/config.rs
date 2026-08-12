@@ -36,7 +36,11 @@ impl Default for DaemonConfig {
 
         let socket_path = if cfg!(unix) {
             dirs.as_ref()
-                .map(|d| d.runtime_dir().unwrap_or(d.data_dir()).join("sigilforge.sock"))
+                .map(|d| {
+                    d.runtime_dir()
+                        .unwrap_or(d.data_dir())
+                        .join("sigilforge.sock")
+                })
                 .unwrap_or_else(|| PathBuf::from("/tmp/sigilforge.sock"))
         } else {
             PathBuf::from(r"\\.\pipe\sigilforge")

@@ -77,6 +77,10 @@ sigilforge/{service}/{account}/{credential_type}
 | `token_expiry` | Access token expiry timestamp |
 | `api_key` | Static API key |
 | `client_secret` | OAuth client secret (provider-level) |
+| `app_id` | GitHub App ID |
+| `installation_id` | GitHub App installation ID |
+| `private_key` | GitHub App PEM private key |
+| `installation_token` | GitHub App installation access token (cache) |
 
 **Examples:**
 ```
@@ -84,6 +88,7 @@ sigilforge/spotify/personal/access_token
 sigilforge/spotify/personal/refresh_token
 sigilforge/github/work/api_key
 sigilforge/gmail/_provider/client_secret    # Provider-level, not account-level
+sigilforge/github-app/raibid-labs/private_key
 ```
 
 ---
@@ -267,6 +272,44 @@ pub trait ReferenceResolver: Send + Sync {
 
 ---
 
+### InstallationTokenSource
+
+GitHub App installation tokens are **minted**, not refreshed. The renewal
+credential is an RSA private key that signs a fresh assertion, not a refresh
+token, so `TokenManager`'s refresh path does not apply. `GitHubAppTokenManager`
+is a sibling implementation rather than a configuration of `DefaultTokenManager`.
+
+```rust
+use async_trait::async_trait;
+
+/// Something that can produce a current GitHub App installation token.
+///
+/// Object-safe, so `DefaultReferenceResolver` can hold one without gaining a
+/// second store type parameter.
+#[async_trait]
+pub trait InstallationTokenSource: Send + Sync {
+    /// Return a valid installation token, minting a new one if the cached token
+    /// is missing or within the refresh buffer of `expires_at`.
+    async fn ensure_installation_token(
+        &self,
+        account: &AccountId,
+    ) -> Result<Token, GitHubAppError>;
+}
+```
+
+`GitHubAppTokenManager` implements `InstallationTokenSource`, `TokenManager`, and
+`ReferenceResolver`. Its `TokenManager` impl is a partial fit and says so:
+
+| Method | Fit |
+|--------|-----|
+| `ensure_access_token` | Exact. Requires `service == "github-app"`. |
+| `get_token_set` | Partial. `refresh_token` is always `None`. |
+| `store_token_set` | Partial. Writes the local cache only. |
+| `revoke_tokens` | Partial. **Local** revocation; GitHub has no endpoint to revoke another installation's token, so the old token stays valid until it expires. |
+| `introspect_token` | Partial. Reports from cache; `scopes` is always empty because permissions live on the App, not the token. |
+
+---
+
 ## Reference Formats
 
 ### auth:// URI Scheme
@@ -293,6 +336,7 @@ auth://{service}/{account}/{credential_type}
 | `auth://gmail/work/token` | Gmail access token for "work" account |
 | `auth://github/oss/api_key` | GitHub API key (PAT) for "oss" account |
 | `auth://openai/default/api_key` | OpenAI API key for "default" account |
+| `auth://github-app/raibid-labs/installation_token` | GitHub App installation token for the "raibid-labs" installation |
 
 **Credential Types:**
 
@@ -303,6 +347,32 @@ auth://{service}/{account}/{credential_type}
 | `refresh_token` | OAuth refresh token | Rarely accessed directly |
 | `client_id` | OAuth client ID | Provider configuration |
 | `client_secret` | OAuth client secret | Provider configuration |
+| `installation_token` | GitHub App installation token (minted on demand) | Machine access to private repos |
+| `app_id` | GitHub App ID | Argo CD / CI configuration |
+| `installation_id` | GitHub App installation ID | Argo CD / CI configuration |
+| `private_key` | GitHub App PEM private key | Argo CD `Secret` generation |
+
+### Reserved service: `github-app`
+
+The service id `github-app` addresses GitHub App installations rather than an
+OAuth provider. The `account` component names the installation - conventionally
+the organization the App is installed on.
+
+```
+auth://github-app/{account}/installation_token
+```
+
+Resolution mints a fresh installation token if the cached one is missing or
+within five minutes of expiry. `token` is accepted as an alias for
+`installation_token`, so consumers written against the generic
+`auth://service/account/token` shape keep working.
+
+Resolving these requires a resolver built with
+`DefaultReferenceResolver::with_github_app`, or the `GitHubAppTokenManager`
+itself (which implements `ReferenceResolver`). Without it, resolution returns
+`ResolveError::NotConfigured` rather than silently serving a stale cached value.
+
+See [GITHUB_APP.md](GITHUB_APP.md) for the full mechanism and setup.
 
 ### vals-style References
 
@@ -575,6 +645,10 @@ pub enum CredentialType {
     ApiKey,
     ClientId,
     ClientSecret,
+    AppId,
+    InstallationId,
+    PrivateKey,
+    InstallationToken,
     Custom(String),
 }
 
