@@ -189,6 +189,26 @@ kill -TERM <PID>
 4. **Fallback to memory storage**
    - Sigilforge falls back to in-memory storage if keyring unavailable
    - **Warning**: Secrets not persisted across daemon restarts
+   - The fallback is not always reached: `KeyringStore::try_new` only constructs
+     an entry handle, so on a headless machine it succeeds and reads fail later.
+     The symptom is a write that reports success followed by "not found" from a
+     different process.
+
+5. **Secrets vanish between commands**
+   - Write succeeds, the next command reports the credential is missing
+   - Check that `libdbus-1-dev` and `pkg-config` were present when Sigilforge was
+     built. Without a platform backend compiled in, the `keyring` crate uses an
+     in-process mock that loses everything at exit:
+     ```bash
+     sudo apt-get install -y libdbus-1-dev pkg-config
+     cargo clean -p keyring && cargo build --workspace
+     ```
+   - Confirm a Secret Service provider is actually running:
+     ```bash
+     pgrep -a gnome-keyring-daemon || pgrep -a kwalletd
+     secret-tool store --label=probe service sigilforge-probe key x  # then Ctrl-D
+     secret-tool lookup service sigilforge-probe key x
+     ```
 
 ---
 

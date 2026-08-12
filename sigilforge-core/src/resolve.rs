@@ -28,6 +28,15 @@ pub enum ResolveError {
     #[error("unsupported scheme: {scheme}")]
     UnsupportedScheme { scheme: String },
 
+    /// The reference is well-formed, but this resolver was built without the
+    /// capability needed to satisfy it.
+    ///
+    /// Resolving `auth://github-app/.../installation_token`, for example,
+    /// requires a resolver constructed with
+    /// [`DefaultReferenceResolver::with_github_app`].
+    #[error("resolver not configured for {reference}: {message}")]
+    NotConfigured { reference: String, message: String },
+
     /// Error from the underlying store.
     #[error("storage error: {0}")]
     StorageError(#[from] crate::store::StoreError),
@@ -156,6 +165,8 @@ impl Default for ResolverConfig {
 /// This resolver handles:
 /// - `auth://` URIs for Sigilforge-managed credentials
 /// - Token refresh when fetching access tokens
+/// - GitHub App installation tokens, when built with
+///   [`with_github_app`](DefaultReferenceResolver::with_github_app)
 ///
 /// # Example
 ///
@@ -183,6 +194,14 @@ where
     store: S,
     token_manager: T,
     config: ResolverConfig,
+
+    /// Optional source of GitHub App installation tokens.
+    ///
+    /// Held behind a trait object rather than a third type parameter: the App
+    /// manager has its own store, and threading that through every use site of
+    /// this resolver would cost more than it buys.
+    #[cfg(feature = "github-app")]
+    github_app: Option<std::sync::Arc<dyn crate::github_app::InstallationTokenSource>>,
 }
 
 #[cfg(feature = "oauth")]
@@ -197,6 +216,8 @@ where
             store,
             token_manager,
             config: ResolverConfig::default(),
+            #[cfg(feature = "github-app")]
+            github_app: None,
         }
     }
 
@@ -206,7 +227,45 @@ where
             store,
             token_manager,
             config,
+            #[cfg(feature = "github-app")]
+            github_app: None,
         }
+    }
+
+    /// Attach a GitHub App token source.
+    ///
+    /// Without this, `auth://github-app/{account}/installation_token` resolves to
+    /// [`ResolveError::NotConfigured`] rather than silently returning a stale
+    /// cached value from the store.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::sync::Arc;
+    /// use sigilforge_core::{
+    ///     DefaultReferenceResolver, MemoryStore,
+    ///     github_app::GitHubAppTokenManager,
+    ///     provider::ProviderRegistry,
+    ///     token_manager::DefaultTokenManager,
+    /// };
+    ///
+    /// let token_manager = DefaultTokenManager::new(MemoryStore::new(), ProviderRegistry::new());
+    /// let apps = Arc::new(GitHubAppTokenManager::new(MemoryStore::new()));
+    ///
+    /// let resolver = DefaultReferenceResolver::new(MemoryStore::new(), token_manager)
+    ///     .with_github_app(apps);
+    ///
+    /// let token = resolver
+    ///     .resolve("auth://github-app/raibid-labs/installation_token")
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "github-app")]
+    pub fn with_github_app(
+        mut self,
+        source: std::sync::Arc<dyn crate::github_app::InstallationTokenSource>,
+    ) -> Self {
+        self.github_app = Some(source);
+        self
     }
 }
 
@@ -256,6 +315,34 @@ where
 
     async fn resolve_ref(&self, cred_ref: &CredentialRef) -> Result<ResolvedValue, ResolveError> {
         use crate::model::CredentialType;
+
+        // GitHub App installation tokens are minted, not refreshed, so they are
+        // routed away from the OAuth token manager before the match below.
+        // `token` is accepted alongside `installation_token` so consumers written
+        // against the generic `auth://service/account/token` shape keep working.
+        #[cfg(feature = "github-app")]
+        if cred_ref.service.as_str() == crate::github_app::GITHUB_APP_SERVICE
+            && matches!(
+                cred_ref.credential_type,
+                CredentialType::InstallationToken | CredentialType::AccessToken
+            )
+        {
+            let source = self
+                .github_app
+                .as_ref()
+                .ok_or_else(|| ResolveError::NotConfigured {
+                    reference: cred_ref.to_auth_uri(),
+                    message: "build the resolver with DefaultReferenceResolver::with_github_app"
+                        .to_string(),
+                })?;
+
+            let token = source
+                .ensure_installation_token(&cred_ref.account)
+                .await
+                .map_err(crate::token::TokenError::from)?;
+
+            return Ok(ResolvedValue::Secret(token.access_token));
+        }
 
         match &cred_ref.credential_type {
             // For access tokens, use the token manager (handles refresh)

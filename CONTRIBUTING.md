@@ -132,7 +132,22 @@ just test-keyring
 
 # Test OAuth functionality
 just test-oauth
+
+# Test GitHub App authentication
+just test-github-app
 ```
+
+The `sigilforge-core` features are:
+
+| Feature | Enables |
+|---------|---------|
+| `keyring-store` (default) | `KeyringStore` over the OS keyring |
+| `oauth` | OAuth2 flows, `DefaultTokenManager`, `DefaultReferenceResolver` |
+| `github-app` | GitHub App JWT signing and installation tokens |
+| `full` | all of the above |
+
+CI runs `--all-features`, so a change that only compiles under one feature
+combination will fail there.
 
 ### Running Integration Tests
 

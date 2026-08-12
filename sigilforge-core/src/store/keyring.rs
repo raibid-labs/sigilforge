@@ -233,8 +233,15 @@ mod tests {
             Err(_) => return,
         };
 
-        let result = store.get("nonexistent/key").await.unwrap();
-        assert!(result.is_none());
+        // `try_new` only constructs an `Entry`; it does not prove the platform
+        // keyring is reachable. On a headless runner with no D-Bus session the
+        // read fails at the backend rather than returning "no such entry", and
+        // that is not a failure of this code.
+        match store.get("nonexistent/key").await {
+            Ok(result) => assert!(result.is_none()),
+            Err(StoreError::BackendError { .. }) | Err(StoreError::KeyringUnavailable { .. }) => {}
+            Err(e) => panic!("unexpected error: {}", e),
+        }
     }
 
     #[tokio::test]

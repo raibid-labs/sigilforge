@@ -13,7 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 # Internal crates
-sigilforge-core = { workspace = true, features = ["oauth", "keyring-store"] }
+sigilforge-core = { workspace = true, features = [
+    "oauth",
+    "keyring-store",
+    "github-app",
+] }
 
 # Async runtime
 tokio = { workspace = true }

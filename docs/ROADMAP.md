@@ -4,16 +4,17 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Current Status
 
-**Version:** v0.2.0
-**Overall Completion:** ~60%
+**Version:** v0.3.0
+**Overall Completion:** ~70%
 
 | Phase | Status | Completion |
 |-------|--------|------------|
 | Phase 0: Scaffolding | Complete | 100% |
 | Phase 1: Storage & CLI | Complete | 100% |
 | Phase 2: OAuth Flows | Complete | 100% |
-| Phase 3: Daemon & API | In Progress | ~80% |
-| Phase 4: Resolution | In Progress | ~20% |
+| Phase 3: Daemon & API | Complete | 100% |
+| Phase 4: Resolution | In Progress | ~50% |
+| Phase 4.5: GitHub App Auth | Complete | 100% |
 | Phase 5: Expansion | Not Started | 0% |
 
 ---
@@ -152,7 +153,7 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 3: Daemon & Socket API
 
-**Status:** ~80% Complete
+**Status:** COMPLETE
 
 **Goal**: Background service with local API for client applications.
 
@@ -171,14 +172,15 @@ This document outlines the development phases for Sigilforge, from initial scaff
   - Connection handling
 
 - [x] Implement API handlers:
-  - `get_token` - **STUB** (see issue #21)
+  - `get_token` - wired to the real `TokenManager`
   - `list_accounts` - return account list
   - `get_account` - return single account
   - `add_account` - initiate account setup
   - `remove_account` - delete account
   - `refresh_token` - force refresh
-  - `resolve` - **STUB** (see issue #22)
+  - `resolve` - wired to the real `ReferenceResolver`
   - `status` - daemon health
+  - `accounts_status` - per-account expiry for status-bar plugins
 
 - [x] Add daemon management to CLI:
   - `sigilforge daemon start` - start daemon
@@ -195,8 +197,6 @@ This document outlines the development phases for Sigilforge, from initial scaff
   - `SigilforgeClient` struct for Rust consumers
   - Connect to daemon
   - Typed request/response
-
-**Note:** `get_token` and `resolve` RPC handlers currently return stub values. See issues #21 and #22 for wiring to actual implementations.
 
 ### Deliverables
 
@@ -247,6 +247,64 @@ This document outlines the development phases for Sigilforge, from initial scaff
 - vals references resolve via external tool
 - ROPS-encrypted config files supported
 - Full integration with Scryforge reference system
+
+---
+
+## Phase 4.5: GitHub App Authentication
+
+**Status:** COMPLETE
+
+**Goal**: Machine-to-machine credentials for private repositories, driven by the
+first real consumer: Argo CD on the DGX Spark cluster syncing
+`raibid-labs/raibid-fish` and `raibid-labs/spark-infra`.
+
+GitHub App auth is a mechanism the existing OAuth machinery cannot express. There
+is no authorization code, no browser, and no refresh token; identity is proved by
+signing an RS256 JWT with the App's private key, which is then exchanged for an
+installation token. See [GITHUB_APP.md](GITHUB_APP.md).
+
+### Tasks
+
+- [x] `GitHubAppCredential` in `sigilforge-core`:
+  - App ID, installation ID, PEM private key
+  - Key validated on construction, stored in the `SecretStore`, redacted from
+    `Debug`/`Display`
+
+- [x] RS256 JWT construction (`github_app::jwt`):
+  - `iat` backdated 60s for clock skew, `exp` clamped to GitHub's 10-minute limit
+  - PKCS#1 v1.5 signing via the `rsa` crate
+  - Accepts PKCS#1 and PKCS#8 PEM
+
+- [x] Installation-token minting and caching (`github_app::token`):
+  - `GitHubAppTokenManager`, a **sibling** of `DefaultTokenManager` - the OAuth
+    refresh path (`refresh_token` -> token endpoint) does not apply
+  - Re-mints only within 5 minutes of `expires_at`
+  - Implements `TokenManager` and `ReferenceResolver` so it composes with
+    existing generic code
+
+- [x] `auth://` resolution:
+  - `auth://github-app/{account}/installation_token`
+  - New `CredentialType` variants: `AppId`, `InstallationId`, `PrivateKey`,
+    `InstallationToken`
+  - `DefaultReferenceResolver::with_github_app` routes these to the App manager
+
+- [x] CLI subcommands:
+  - `sigilforge github-app register|list|token|argocd-secret|remove`
+
+- [x] Argo CD consumer path:
+  - `argocd-secret` renders a labelled repository `Secret` to **stdout**
+  - Never applied to a cluster by Sigilforge; pipe to `kubectl` or encrypt
+
+- [x] Fix `KeyringStore` persistence:
+  - The `keyring` crate ships no credential store in its default features, so
+    every "stored in the OS keyring" write was going to an in-process mock and
+    vanishing at exit. Platform backends are now selected explicitly.
+
+### Deliverables
+
+- Argo CD can sync private repositories using an org-owned, repo-scoped App
+- CI and local tooling get a GitHub API token from `sigilforge github-app token`
+- No personal access token anywhere in the path
 
 ---
 

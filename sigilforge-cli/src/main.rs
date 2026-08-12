@@ -13,6 +13,11 @@
 //!
 //! # Get a fresh access token
 //! sigilforge get-token spotify personal
+//!
+//! # Register a GitHub App and print an installation token
+//! sigilforge github-app register raibid-labs \
+//!     --app-id 1234567 --installation-id 89012345 --key-file app.private-key.pem
+//! sigilforge github-app token raibid-labs
 //! ```
 
 use anyhow::Result;
@@ -28,6 +33,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod client;
+mod github_app;
 
 #[derive(Parser)]
 #[command(name = "sigilforge")]
@@ -96,6 +102,12 @@ enum Commands {
         reference: String,
     },
 
+    /// Manage GitHub App credentials (machine access to private repos)
+    GithubApp {
+        #[command(subcommand)]
+        command: github_app::GithubAppCommands,
+    },
+
     /// Start the daemon in foreground (for debugging)
     Daemon,
 }
@@ -124,6 +136,7 @@ async fn main() -> Result<()> {
             force,
         } => remove_account(&service, &account, force).await,
         Commands::Resolve { reference } => resolve_reference(&reference).await,
+        Commands::GithubApp { command } => github_app::run(command).await,
         Commands::Daemon => run_daemon_foreground().await,
     }
 }
@@ -549,6 +562,11 @@ async fn delete_account_secrets(service: &str, account: &str) -> Result<()> {
         CredentialType::ClientId,
         CredentialType::ClientSecret,
         CredentialType::TokenScopes,
+        // GitHub App registrations live under the same key convention.
+        CredentialType::AppId,
+        CredentialType::InstallationId,
+        CredentialType::PrivateKey,
+        CredentialType::InstallationToken,
     ];
 
     for cred_type in &credential_types {
@@ -582,9 +600,28 @@ async fn resolve_reference(reference: &str) -> Result<()> {
 
 async fn fallback_resolve_reference(reference: &str) -> Result<()> {
     use sigilforge_core::CredentialRef;
+    use sigilforge_core::resolve::{ReferenceResolver, ResolvedValue};
 
     let cred_ref = CredentialRef::from_auth_uri(reference)
         .map_err(|e| anyhow::anyhow!("Failed to parse reference '{}': {}", reference, e))?;
+
+    // GitHub App references are minted, not looked up: a raw store read would
+    // return the cached token even when it is about to expire.
+    if cred_ref.service.as_str() == sigilforge_core::GITHUB_APP_SERVICE {
+        let store = KeyringStore::try_new("sigilforge")
+            .map_err(|e| anyhow::anyhow!("Keyring unavailable: {}", e))?;
+        let manager = sigilforge_core::GitHubAppTokenManager::new(store);
+
+        let value = manager.resolve_ref(&cred_ref).await?;
+        match value {
+            ResolvedValue::Multiple(_) => {
+                anyhow::bail!("Reference '{}' resolved to multiple values", reference)
+            }
+            other => println!("{}", other.expose()),
+        }
+
+        return Ok(());
+    }
 
     // Initialize secret store
     let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {

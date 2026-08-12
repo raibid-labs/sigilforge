@@ -36,6 +36,9 @@ pub mod token_manager;
 #[cfg(feature = "oauth")]
 pub mod oauth;
 
+#[cfg(feature = "github-app")]
+pub mod github_app;
+
 // Re-export commonly used types at crate root
 pub use model::{Account, AccountId, CredentialRef, CredentialType, ServiceId};
 
@@ -60,3 +63,8 @@ pub use provider::{ProviderConfig, ProviderRegistry};
 
 #[cfg(feature = "oauth")]
 pub use token_manager::DefaultTokenManager;
+
+#[cfg(feature = "github-app")]
+pub use github_app::{
+    GITHUB_APP_SERVICE, GitHubAppCredential, GitHubAppError, GitHubAppTokenManager,
+};

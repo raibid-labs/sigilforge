@@ -44,7 +44,17 @@ toml = "0.8"
 directories = "5.0"
 
 # Secret storage
-keyring = "3"
+#
+# keyring 3.x ships NO credential store in its default features - it falls back
+# to an in-process mock that "succeeds" on write and is empty in the next
+# process. A platform backend has to be selected explicitly. These features are
+# target-gated inside the keyring crate, so naming all three is correct.
+keyring = { version = "3", features = [
+    "sync-secret-service", # Linux/BSD: Secret Service over D-Bus
+    "crypto-rust",         # pure-Rust crypto for secret-service (no OpenSSL link)
+    "apple-native",        # macOS: Keychain
+    "windows-native",      # Windows: Credential Manager
+] }
 
 # OAuth2
 oauth2 = "4.4"
@@ -54,6 +64,12 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # URL handling
 url = "2.5"
+
+# RSA signing (RS256 JWTs for GitHub App authentication)
+rsa = { version = "0.9", features = ["sha2"] }
+
+# base64url encoding (JWT segments)
+base64 = "0.22"
 
 # Unique identifiers
 uuid = { version = "1.11", features = ["v4", "serde"] }

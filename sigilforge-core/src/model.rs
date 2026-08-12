@@ -168,6 +168,18 @@ pub enum CredentialType {
     /// OAuth scopes (comma-separated).
     TokenScopes,
 
+    /// GitHub App ID (numeric, not secret but stored alongside the key).
+    AppId,
+
+    /// GitHub App installation ID (numeric, not secret).
+    InstallationId,
+
+    /// PEM-encoded private key (GitHub App signing key).
+    PrivateKey,
+
+    /// GitHub App installation access token (short-lived, minted on demand).
+    InstallationToken,
+
     /// Custom credential type.
     Custom(String),
 }
@@ -183,6 +195,10 @@ impl CredentialType {
             Self::ClientId => "client_id",
             Self::ClientSecret => "client_secret",
             Self::TokenScopes => "token_scopes",
+            Self::AppId => "app_id",
+            Self::InstallationId => "installation_id",
+            Self::PrivateKey => "private_key",
+            Self::InstallationToken => "installation_token",
             Self::Custom(s) => s,
         }
     }
@@ -277,6 +293,10 @@ impl CredentialRef {
             "api_key" => CredentialType::ApiKey,
             "client_id" => CredentialType::ClientId,
             "client_secret" => CredentialType::ClientSecret,
+            "app_id" => CredentialType::AppId,
+            "installation_id" => CredentialType::InstallationId,
+            "private_key" => CredentialType::PrivateKey,
+            "installation_token" => CredentialType::InstallationToken,
             other => CredentialType::Custom(other.to_string()),
         };
 
@@ -328,6 +348,38 @@ mod tests {
         assert_eq!(cred.service.as_str(), "spotify");
         assert_eq!(cred.account.as_str(), "personal");
         assert_eq!(cred.credential_type, CredentialType::AccessToken);
+    }
+
+    #[test]
+    fn test_credential_ref_from_github_app_auth_uri() {
+        let cred = CredentialRef::from_auth_uri("auth://github-app/raibid-labs/installation_token")
+            .unwrap();
+        assert_eq!(cred.service.as_str(), "github-app");
+        assert_eq!(cred.account.as_str(), "raibid-labs");
+        assert_eq!(cred.credential_type, CredentialType::InstallationToken);
+    }
+
+    #[test]
+    fn test_github_app_credential_types_roundtrip() {
+        for cred_type in [
+            CredentialType::AppId,
+            CredentialType::InstallationId,
+            CredentialType::PrivateKey,
+            CredentialType::InstallationToken,
+        ] {
+            let original = CredentialRef::new("github-app", "raibid-labs", cred_type);
+            let parsed = CredentialRef::from_auth_uri(&original.to_auth_uri()).unwrap();
+            assert_eq!(original, parsed);
+        }
+    }
+
+    #[test]
+    fn test_github_app_storage_keys() {
+        let cred = CredentialRef::new("github-app", "raibid-labs", CredentialType::PrivateKey);
+        assert_eq!(
+            cred.to_key(),
+            "sigilforge/github-app/raibid-labs/private_key"
+        );
     }
 
     #[test]
