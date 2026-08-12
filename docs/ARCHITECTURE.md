@@ -17,11 +17,11 @@ sigilforge/
 │       │   ├── account.rs      # AccountId, Account
 │       │   └── credential.rs   # CredentialRef, Token, etc.
 │       ├── store/              # Secret storage abstraction
-│       │   ├── mod.rs
-│       │   ├── traits.rs       # SecretStore trait
+│       │   ├── mod.rs          # SecretStore trait, open_store, probing
+│       │   ├── config.rs       # StoreBackend, StoreConfig, precedence
 │       │   ├── memory.rs       # In-memory implementation
 │       │   ├── keyring.rs      # OS keyring implementation
-│       │   └── encrypted.rs    # ROPS/SOPS file backend
+│       │   └── encrypted_file.rs  # age-encrypted file backend
 │       ├── auth/               # OAuth and token management
 │       │   ├── mod.rs
 │       │   ├── traits.rs       # TokenManager trait
@@ -142,7 +142,9 @@ Sigilforge supports multiple storage backends through the `SecretStore` trait:
 - Linux: Secret Service over D-Bus (needs `libdbus-1-dev` at build time)
 - macOS: Keychain
 - Windows: Credential Manager
-- Best for runtime secrets (refresh tokens, API keys, GitHub App private keys)
+- Good for an interactive desktop session; **unusable on a headless host**
+- Cannot enumerate: `list_keys` returns an error, which is why account metadata
+  lives separately in `accounts.json`
 
 > The `keyring` crate ships **no** credential store in its default features and
 > silently falls back to an in-process mock. The workspace dependency selects
@@ -150,15 +152,62 @@ Sigilforge supports multiple storage backends through the `SecretStore` trait:
 > them nothing persists across process boundaries.
 >
 > `KeyringStore::try_new` only constructs an `Entry` - it does not prove the
-> platform keyring is reachable, so `create_store`'s fallback to `MemoryStore`
-> does not trigger on a headless machine. Code that must persist should read
-> back after writing, as `GitHubAppTokenManager::register` does.
+> platform keyring is reachable. `KeyringStore::probe` does, by writing, reading
+> back, and deleting a sentinel entry, and `open_store` calls it before handing
+> the store to anyone.
 
 #### EncryptedFileStore
-- ROPS (Rust-native) or SOPS (via CLI) encrypted YAML/JSON files
-- Git-friendly: encrypted files can be committed
-- Useful for service configurations and non-secret metadata
-- Encryption keys from age, GPG, or cloud KMS
+
+An age-encrypted file. This is the backend for servers, containers, and CI: it
+needs no D-Bus session bus, no desktop, no agent, and no prompt on read.
+
+- **age** via the `age` crate (X25519 + ChaCha20-Poly1305), not ROPS, not a SOPS
+  or `gpg` subprocess. A missing binary on a minimal host is the same class of
+  failure as the missing session bus this backend exists to route around; a
+  library has no such failure mode. The output is still a standard age file, so
+  `age -d -i <identity> <store>` recovers it without Sigilforge.
+- Two files, in **two different directories**, so that backing up the data
+  directory does not ship the key:
+
+  | File | Default | Mode |
+  |------|---------|------|
+  | identity (private key) | `~/.config/sigilforge/age-identity.key` | `0600` |
+  | encrypted store | `~/.local/share/sigilforge/secrets.age` | `0600` |
+
+- Refuses to use an identity file that group or other can read, rather than
+  trusting it silently
+- The whole store is one encrypted JSON map, rewritten atomically (temp file,
+  `fsync`, rename) under an advisory lock; reads decrypt fresh every time, so a
+  value written by one process is visible to the next
+- Unlike the keyrings, it **can** enumerate: `list_keys` works
+- A zero-byte store file is treated as truncation, not as an empty store
+- Set up with `sigilforge store init`
+
+> Losing the identity file loses every secret in the store. There is no escrow,
+> no recovery, and no password reset. `store init` says so, loudly.
+
+### Backend Selection
+
+`open_store()` picks a backend, **probes it**, and returns it - or fails.
+
+| Precedence | Source |
+|-----------:|--------|
+| 1 | `SIGILFORGE_STORE_BACKEND` (`keyring` \| `encrypted-file` \| `memory` \| `auto`) |
+| 2 | `[storage] backend` in `~/.config/sigilforge/config.toml` |
+| 3 | automatic: encrypted file if an identity exists, else keyring if it probes |
+
+Two rules make this trustworthy:
+
+1. **A backend named explicitly is never silently replaced.** If it does not
+   work, the call fails naming it and why.
+2. **`MemoryStore` is never selected automatically.** A store that quietly
+   became an empty `HashMap` reports every credential as missing, which is
+   indistinguishable from data loss - and was, in practice, how a registered
+   GitHub App came to be reported as unregistered on the DGX Spark.
+
+When nothing is usable the error lists every candidate with its reason, and
+points at `sigilforge store init`. `sigilforge store status` prints the same
+information on demand.
 
 ### Storage Key Convention
 
@@ -428,11 +477,15 @@ Location: `~/.config/sigilforge/config.toml` (Linux)
 socket_path = "/run/user/1000/sigilforge.sock"  # Optional override
 
 [storage]
-# Primary backend for runtime secrets
-primary = "keyring"
+# Backend for secrets: keyring | encrypted-file | memory | auto (the default).
+# `auto` prefers the encrypted file store when an age identity exists, then the
+# OS keyring if it answers a round-trip probe. It never falls back to memory.
+backend = "auto"
 
-# Optional secondary backend for encrypted configs
-secondary = { type = "rops", path = "~/.config/sigilforge/secrets.yaml" }
+# Only read by the encrypted-file backend. Both default to the paths below;
+# the identity deliberately does not live beside the ciphertext.
+identity_file = "~/.config/sigilforge/age-identity.key"
+secrets_file  = "~/.local/share/sigilforge/secrets.age"
 
 [oauth]
 # Local callback server for auth code flow
@@ -473,7 +526,16 @@ Actual credentials (tokens, API keys) are stored separately in the configured `S
 
 1. **No plaintext secrets in config files**: Client secrets and tokens go in keyring or encrypted files only.
 
-2. **Minimal daemon permissions**: Daemon runs as user, not root. Uses user's keyring.
+2. **Minimal daemon permissions**: Daemon runs as user, not root. Uses the user's keyring or the user's encrypted store; both are `0600`.
+
+2a. **Keys are separated from ciphertext**: The age identity lives in the config
+    directory and the encrypted store in the data directory. An identity file
+    readable by group or other is refused, not warned about.
+
+2b. **Storage failures are never silent**: An unreachable store is reported as
+    unreachable. It is never downgraded to an empty in-memory store, because a
+    credential manager that reports "you have no credentials" when it means
+    "I could not look" is worse than one that stops.
 
 3. **Socket permissions**: Unix socket is created with user-only permissions (0600).
 

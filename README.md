@@ -8,7 +8,15 @@ Sigilforge is a local daemon + library that provides unified secret storage, OAu
 
 Sigilforge acts as a **small, local "vault + token service"** that:
 
-- **Stores credentials securely**: API keys, OAuth refresh tokens, and other sensitive values are stored in the OS keyring at runtime, with optional encrypted file storage (SOPS/ROPS) for Git-friendly configuration.
+- **Stores credentials securely**: API keys, OAuth refresh tokens, and other sensitive values go into the OS keyring **where there is one**, and into an age-encrypted file where there is not - a server over SSH has no D-Bus session bus, so the keyring is not an option there. Which backend applies:
+
+  | Host | Backend | Setup |
+  |------|---------|-------|
+  | Desktop session (Linux with an unlocked keyring, macOS, Windows) | OS keyring | none |
+  | Headless: SSH, container, CI runner | age-encrypted file, `0600` | `sigilforge store init`, once |
+  | Tests | in-memory | `SIGILFORGE_STORE_BACKEND=memory` |
+
+  The backend is probed before use, and an unreachable one is reported as unreachable - never as an empty set of credentials. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#backend-selection).
 
 - **Runs OAuth flows**: Implements OAuth2 device-code and authorization-code+PKCE flows for common providers (Google, Microsoft, Spotify, Reddit, GitHub, etc.) so applications don't need to implement auth themselves.
 
@@ -37,9 +45,10 @@ Sigilforge acts as a **small, local "vault + token service"** that:
 │        │                     │                     │            │
 │  ┌─────▼─────┐        ┌─────▼─────┐        ┌─────▼─────┐       │
 │  │ OS Keyring│        │ Encrypted │        │   OAuth   │       │
-│  │           │        │   Files   │        │ Providers │       │
-│  └───────────┘        │(ROPS/SOPS)│        │           │       │
-│                       └───────────┘        └───────────┘       │
+│  │ (desktop) │        │   File    │        │ Providers │       │
+│  └───────────┘        │(age, head-│        │           │       │
+│                       │  less)    │        └───────────┘       │
+│                       └───────────┘                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,6 +78,9 @@ sigilforge get-token spotify personal
 
 **Argo CD / CI** using a GitHub App for private repositories:
 ```bash
+# On a headless host, set up storage once (no D-Bus session bus there)
+sigilforge store init
+
 # Register once (App ID, installation ID, and PEM from the GitHub App settings page)
 sigilforge github-app register raibid-labs \
     --app-id 1234567 --installation-id 89012345 --key-file app.private-key.pem
@@ -86,7 +98,7 @@ See [docs/GITHUB_APP.md](docs/GITHUB_APP.md).
 
 1. **Centralized Auth**: Applications don't re-implement OAuth flows; they ask Sigilforge for tokens.
 
-2. **Secure Secret Storage**: Sensitive values live in the OS keyring or encrypted files, not plaintext configs.
+2. **Secure Secret Storage**: Sensitive values live in the OS keyring or an age-encrypted file, not plaintext configs - and a storage failure is reported as a storage failure, not as a missing credential.
 
 3. **Token Lifecycle Management**: Access tokens are refreshed automatically; consumers always get valid tokens.
 
@@ -120,7 +132,11 @@ sigilforge/
 ### Prerequisites
 
 - Rust 1.85+ (2024 edition)
-- A system with keyring support (Linux with `libsecret`, macOS Keychain, Windows Credential Manager)
+- For the keyring backend: a desktop session (Linux with `libsecret` and a
+  running Secret Service, macOS Keychain, Windows Credential Manager)
+- On a headless host none of that exists; run `sigilforge store init` once and
+  Sigilforge uses an age-encrypted file instead. No extra packages needed - the
+  encryption is a Rust library, not a `sops`/`age`/`gpg` binary.
 
 ### Building
 
@@ -139,6 +155,16 @@ cargo run -p sigilforge-daemon
 ```bash
 cargo run -p sigilforge-cli -- --help
 ```
+
+### First run on a headless host
+
+```bash
+sigilforge store init     # generates an age identity, 0600, and an empty store
+sigilforge store status   # shows which backend is selected, and why
+```
+
+`store init` prints the path of the identity file. **Back it up.** It is the
+only key to the store; there is no escrow and no recovery.
 
 ## Configuration
 
@@ -199,6 +225,7 @@ See `docs/INTERFACES.md` for the full API specification.
 - **[ROADMAP.md](docs/ROADMAP.md)**: Development phases and future plans
 - **[NEXT_STEPS.md](docs/NEXT_STEPS.md)**: Current development tasks
 - **[RELEASE.md](docs/RELEASE.md)**: Release process and versioning workflow
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**: Including the headless / no-D-Bus case
 
 For version-specific documentation, see [docs/versions/](docs/versions/).
 

@@ -13,7 +13,7 @@ This document outlines the development phases for Sigilforge, from initial scaff
 | Phase 1: Storage & CLI | Complete | 100% |
 | Phase 2: OAuth Flows | Complete | 100% |
 | Phase 3: Daemon & API | Complete | 100% |
-| Phase 4: Resolution | In Progress | ~50% |
+| Phase 4: Resolution & Encrypted Storage | In Progress | ~75% |
 | Phase 4.5: GitHub App Auth | Complete | 100% |
 | Phase 5: Expansion | Not Started | 0% |
 
@@ -209,9 +209,9 @@ This document outlines the development phases for Sigilforge, from initial scaff
 
 ## Phase 4: Reference Resolution & Encrypted Storage
 
-**Status:** ~20% Complete
+**Status:** ~75% Complete
 
-**Goal**: Full reference resolution and ROPS/SOPS integration.
+**Goal**: Full reference resolution, and secret storage that works on a server.
 
 ### Tasks
 
@@ -225,27 +225,51 @@ This document outlines the development phases for Sigilforge, from initial scaff
   - Shell out to `vals` for external resolution
   - Cache resolved values
 
-- [ ] Implement `EncryptedFileStore`:
-  - ROPS integration (Rust-native)
-  - SOPS fallback via CLI
-  - Support age and GPG encryption
-  - Key from environment or config
+- [x] Implement `EncryptedFileStore`:
+  - **age** (the `age` crate, Rust-native) rather than ROPS or a SOPS CLI
+    fallback. The driving requirement was a DGX Spark reached over SSH, where a
+    missing `sops`/`age`/`gpg` binary is the same class of failure as the
+    missing D-Bus session bus that started this. A library has no such failure
+    mode, and the file it writes is still readable by the standard `age` and
+    `rage` CLIs, so nothing is locked in.
+  - GPG is deliberately not supported: it wants an agent and, on a locked key, a
+    prompt. A daemon and a CI job have no one to prompt.
+  - X25519 identity file, `0600`, in the **config** directory; the ciphertext in
+    the **data** directory, so backing up one does not back up the other
+  - Refuses an identity file that group or other can read
+  - Whole-store atomic rewrite (temp file, `fsync`, rename) under an advisory
+    lock, so a crash cannot truncate it
+  - Unlike the platform keyrings, it can enumerate: `list_keys` works
+  - First-run: `sigilforge store init`
+
+- [x] Honest backend selection (`open_store`):
+  - `SIGILFORGE_STORE_BACKEND`, then `[storage] backend` in
+    `~/.config/sigilforge/config.toml`, then automatic
+  - Every backend is **probed** - a real keyring round-trip, a real decrypt -
+    rather than merely constructed
+  - An explicitly requested backend is never silently replaced
+  - **No silent fallback to `MemoryStore`.** That fallback made an unreachable
+    store indistinguishable from an empty one, which is how a registered GitHub
+    App came to be reported as unregistered. `memory` is now reachable only by
+    name.
 
 - [ ] Add reference resolution to daemon API:
   - `resolve` method handles any reference type
   - Automatic backend detection
   - Error on unresolvable references
 
-- [ ] Configuration for encrypted files:
-  - Specify ROPS/SOPS file paths
-  - Key configuration
-  - Auto-decrypt on read
+- [x] Configuration for encrypted files:
+  - `[storage] backend`, `identity_file`, `secrets_file` in `config.toml`
+  - `SIGILFORGE_AGE_IDENTITY` / `SIGILFORGE_SECRETS_FILE` overrides
+  - Decrypts on read with no prompt, so daemons and CI work unattended
 
 ### Deliverables
 
 - `auth://` URIs resolve to credentials
-- vals references resolve via external tool
-- ROPS-encrypted config files supported
+- Sigilforge is usable on a headless host: register in one process, read in the
+  next, with no D-Bus session bus
+- Storage failures are reported as storage failures, never as missing credentials
+- vals references resolve via external tool *(outstanding)*
 - Full integration with Scryforge reference system
 
 ---

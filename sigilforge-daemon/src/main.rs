@@ -39,8 +39,15 @@ fn init_logging() {
 async fn run_daemon(config: config::DaemonConfig) -> Result<()> {
     info!("Daemon starting on {:?}", config.socket_path);
 
-    // Create API state
-    let state = api::ApiState::new()?;
+    // Create API state. This opens - and probes - the secret store, so a daemon
+    // that gets past this line can actually read the credentials it serves.
+    let state = api::ApiState::new().map_err(|e| {
+        anyhow::anyhow!(
+            "{e}\n\nThe daemon will not start without working secret storage: serving \
+             tokens from a store it cannot read would report every credential as \
+             missing. Run `sigilforge store status` to see what is available."
+        )
+    })?;
 
     // Start the JSON-RPC server
     let server_handle = api::start_server(&config.socket_path, state).await?;

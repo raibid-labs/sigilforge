@@ -5,7 +5,8 @@
 //! This crate provides:
 //! - Domain types for services, accounts, and credentials
 //! - Traits for secret storage, token management, and reference resolution
-//! - In-memory and (optionally) keyring-based storage implementations
+//! - Storage backends: in-memory, the OS keyring, and an age-encrypted file for
+//!   headless hosts with no D-Bus session bus (see [`store`])
 //!
 //! ## Quick Start
 //!
@@ -42,10 +43,16 @@ pub mod github_app;
 // Re-export commonly used types at crate root
 pub use model::{Account, AccountId, CredentialRef, CredentialType, ServiceId};
 
-pub use store::{MemoryStore, Secret, SecretStore, StoreError, create_store};
+pub use store::{
+    BackendProbe, MemoryStore, Secret, SecretStore, StoreBackend, StoreConfig, StoreError,
+    create_store, open_store, open_store_with, probe_backends,
+};
 
 #[cfg(feature = "keyring-store")]
 pub use store::KeyringStore;
+
+#[cfg(feature = "encrypted-file-store")]
+pub use store::{EncryptedFileStore, InitOutcome, init_encrypted_store};
 
 pub use token::{Token, TokenError, TokenInfo, TokenManager, TokenSet};
 

@@ -44,6 +44,14 @@ impl KeyringStore {
     /// Try to create a new keyring store.
     ///
     /// Returns an error if the keyring backend is not available on this platform.
+    ///
+    /// # Not a proof that the keyring works
+    ///
+    /// This only constructs an [`Entry`], which on Linux succeeds without ever
+    /// contacting D-Bus. On a headless host it therefore returns `Ok` and the
+    /// first real read fails much later. Call [`probe`](Self::probe) - or use
+    /// [`open_store`](super::open_store), which does - if you need to know that
+    /// secrets written here will still be there in the next process.
     pub fn try_new(service_name: &str) -> Result<Self, StoreError> {
         // Validate that keyring is available by attempting to create a test entry
         let test_key = format!("{}/__test__", service_name);
@@ -55,6 +63,74 @@ impl KeyringStore {
                 message: format!("keyring backend not available: {}", e),
             }),
         }
+    }
+
+    /// Prove the platform keyring actually works, by using it.
+    ///
+    /// Writes a sentinel value, reads it back, and deletes it. Nothing short of
+    /// a real round-trip distinguishes a working Secret Service from the three
+    /// ways this backend fails on a server: no D-Bus session bus, no unlocked
+    /// keyring daemon, or a `keyring` crate built with no platform backend at
+    /// all (which "succeeds" into a process-local mock).
+    ///
+    /// The sentinel lives under `{service_name}/__probe__` and is removed
+    /// afterwards. A failed cleanup is not an error - the value is a constant
+    /// with no secret in it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::BackendUnavailable`] naming what failed.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # #[cfg(feature = "keyring-store")]
+    /// # fn main() {
+    /// use sigilforge_core::store::KeyringStore;
+    ///
+    /// match KeyringStore::try_new("sigilforge").and_then(|s| s.probe().map(|_| s)) {
+    ///     Ok(_store) => println!("the keyring is usable"),
+    ///     Err(e) => eprintln!("not usable: {}", e),
+    /// }
+    /// # }
+    /// # #[cfg(not(feature = "keyring-store"))]
+    /// # fn main() {}
+    /// ```
+    pub fn probe(&self) -> Result<(), StoreError> {
+        const PROBE_KEY: &str = "__probe__";
+        const PROBE_VALUE: &str = "sigilforge-availability-probe";
+
+        let unavailable = |stage: &str, e: &dyn std::fmt::Display| StoreError::BackendUnavailable {
+            backend: super::StoreBackend::Keyring.to_string(),
+            reason: format!("{} failed: {}", stage, e),
+        };
+
+        let entry = self
+            .create_entry(PROBE_KEY)
+            .map_err(|e| unavailable("creating a probe entry", &e))?;
+
+        entry
+            .set_password(PROBE_VALUE)
+            .map_err(|e| unavailable("writing a probe entry", &e))?;
+
+        let read_back = entry
+            .get_password()
+            .map_err(|e| unavailable("reading the probe entry back", &e));
+
+        let _ = entry.delete_credential();
+
+        // A write that "succeeds" and reads back as something else is the
+        // in-process mock, or a keyring that is dropping writes.
+        if read_back? != PROBE_VALUE {
+            return Err(StoreError::BackendUnavailable {
+                backend: super::StoreBackend::Keyring.to_string(),
+                reason: "the keyring accepted a probe write but returned a different value; \
+                         it is not persisting credentials"
+                    .to_string(),
+            });
+        }
+
+        Ok(())
     }
 
     /// Create a keyring entry for the given key.
@@ -241,6 +317,26 @@ mod tests {
             Ok(result) => assert!(result.is_none()),
             Err(StoreError::BackendError { .. }) | Err(StoreError::KeyringUnavailable { .. }) => {}
             Err(e) => panic!("unexpected error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_probe_never_reports_a_broken_keyring_as_working() {
+        let store = match KeyringStore::try_new("sigilforge-test-probe") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        // Either outcome is legitimate - this machine may or may not have a
+        // Secret Service. What matters is that a failure is *reported*, named,
+        // and typed, rather than swallowed the way `try_new` swallows it.
+        match store.probe() {
+            Ok(()) => {}
+            Err(StoreError::BackendUnavailable { backend, reason }) => {
+                assert_eq!(backend, "keyring");
+                assert!(!reason.is_empty(), "an unavailable backend must say why");
+            }
+            Err(e) => panic!("unexpected error type: {}", e),
         }
     }
 

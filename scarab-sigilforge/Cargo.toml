@@ -11,7 +11,11 @@ repository.workspace = true
 scarab-plugin-api = "0.3.3"
 
 # Sigilforge core
-sigilforge-core = { workspace = true, features = ["oauth", "keyring-store"] }
+sigilforge-core = { workspace = true, features = [
+    "oauth",
+    "keyring-store",
+    "encrypted-file-store",
+] }
 
 # Async runtime
 tokio = { workspace = true }

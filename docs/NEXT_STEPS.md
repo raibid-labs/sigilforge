@@ -15,12 +15,12 @@ working credential manager, not a scaffold.
 | Area | State |
 |------|-------|
 | Domain model | `ServiceId`, `AccountId`, `Account`, `CredentialRef`, `CredentialType` |
-| Storage | `MemoryStore` and `KeyringStore` behind the `SecretStore` trait |
+| Storage | `MemoryStore`, `KeyringStore`, and `EncryptedFileStore` (age) behind the `SecretStore` trait; `open_store` probes before returning one |
 | Account metadata | `AccountStore`, persisted to `~/.config/sigilforge/accounts.json` |
 | OAuth | Auth code + PKCE and device code flows; `DefaultTokenManager` refreshes |
 | GitHub App | RS256 JWT -> installation token, cached; `GitHubAppTokenManager` |
 | Daemon | JSON-RPC 2.0 over Unix socket; handlers wired to real implementations |
-| CLI | `add-account`, `list-accounts`, `get-token`, `remove-account`, `resolve`, `github-app *` |
+| CLI | `add-account`, `list-accounts`, `get-token`, `remove-account`, `resolve`, `github-app *`, `store init|status` |
 | Client library | `sigilforge-client` (`DaemonClient`) |
 | TUI | `sigilforge-tui`, plus a `scarab-sigilforge` status-bar plugin |
 | Resolution | `auth://` URIs resolve, including GitHub App installation tokens |
@@ -30,7 +30,6 @@ working credential manager, not a scaffold.
 | Gap | Where |
 |-----|-------|
 | `vals:ref+...` resolution | `resolve.rs` returns `ExternalError("not yet implemented")` |
-| `EncryptedFileStore` (ROPS/SOPS) | Not started; documented in ARCHITECTURE.md as a future backend |
 | `KeyringStore::list_keys` | Returns `BackendError`; platform keyrings cannot enumerate |
 | Daemon-side GitHub App RPC | The CLI's `github-app` commands talk to core directly |
 | Providers beyond GitHub/Spotify/Google | `ProviderRegistry::with_defaults` |
@@ -49,12 +48,9 @@ These are real, small, and worth fixing:
    "Refresh not yet implemented" and tells the user to re-authenticate, even
    though `DefaultTokenManager` can refresh. The direct-mode path should use it.
 
-3. **`KeyringStore::try_new` does not prove the keyring works.** It only
-   constructs an `Entry`. On a headless machine it succeeds and later reads fail,
-   which is why `create_store`'s documented "fall back to memory if unavailable"
-   does not actually trigger. `GitHubAppTokenManager::register` works around this
-   by reading the key back after writing; a `probe()` on the store would fix it
-   generally.
+3. ~~**`KeyringStore::try_new` does not prove the keyring works.**~~ Fixed.
+   `KeyringStore::probe` does a real write/read/delete round-trip, `open_store`
+   calls it, and there is no silent fallback to memory left to mask the failure.
 
 4. **`sigilforge daemon` (CLI subcommand) is a stub.** It prints
    `[stub] Running daemon in foreground...` and sleeps. The real daemon is the
@@ -64,14 +60,14 @@ These are real, small, and worth fixing:
 
 ## Suggested next work
 
-### 1. Finish Phase 4: vals and encrypted file storage
+### 1. Finish Phase 4: vals references
 
-`ResolverConfig` already has `enable_vals`, `vals_path`, and `cache_ttl_secs`
-fields that nothing reads.
+`EncryptedFileStore` has landed (age, see ARCHITECTURE.md). What is left of
+Phase 4 is `vals`: `ResolverConfig` already has `enable_vals`, `vals_path`, and
+`cache_ttl_secs` fields that nothing reads.
 
 - Shell out to `vals` for `vals:ref+...` references
 - Honour `cache_ttl_secs` for resolved values
-- Implement `EncryptedFileStore` over ROPS (Rust-native) with a SOPS CLI fallback
 
 ### 2. Unify token expiry storage
 
@@ -116,6 +112,12 @@ Doc tests run in CI, so examples in `///` comments must compile.
 `KeyringStore` uses the Secret Service on Linux, which needs `libdbus-1-dev` and
 `pkg-config` at build time. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
+At **run** time it also needs a D-Bus session bus, which a server reached over
+SSH does not have. Use `sigilforge store init` there; the encrypted file backend
+needs no system packages at all. The test suite requires neither - run it with
+`env -u DBUS_SESSION_BUS_ADDRESS -u XDG_RUNTIME_DIR cargo test --workspace
+--all-features` to prove it.
+
 ## Layout
 
 ```text
@@ -125,7 +127,8 @@ sigilforge/
 │       ├── lib.rs
 │       ├── model.rs            # ServiceId, AccountId, CredentialRef, CredentialType
 │       ├── error.rs
-│       ├── store/              # SecretStore trait, memory + keyring backends
+│       ├── store/              # SecretStore trait, backend selection + probing
+│       │                       #   memory / keyring / encrypted_file (age)
 │       ├── token.rs            # Token, TokenSet, TokenManager trait
 │       ├── token_manager.rs    # DefaultTokenManager (OAuth)
 │       ├── resolve.rs          # ReferenceResolver, DefaultReferenceResolver
@@ -134,7 +137,7 @@ sigilforge/
 │       ├── oauth/              # pkce.rs, device_code.rs
 │       └── github_app/         # mod.rs, jwt.rs, token.rs, argocd.rs
 ├── sigilforge-daemon/          # JSON-RPC server (sigilforged)
-├── sigilforge-cli/             # sigilforge binary; github_app.rs holds App commands
+├── sigilforge-cli/             # sigilforge binary; github_app.rs, store_cmd.rs
 ├── sigilforge-client/          # DaemonClient for Rust consumers
 ├── sigilforge-tui/
 ├── scarab-sigilforge/
@@ -156,9 +159,11 @@ Two modes, both working today.
 ### Library mode (embedded)
 
 ```rust,ignore
-use sigilforge_core::{TokenManager, DefaultTokenManager, KeyringStore};
+use sigilforge_core::{TokenManager, DefaultTokenManager, open_store};
 
-let store = KeyringStore::try_new("sigilforge")?;
+// Keyring on a desktop, age-encrypted file on a headless host, error if
+// neither works. Never a silent MemoryStore.
+let store = open_store()?;
 let manager = DefaultTokenManager::new(store, providers);
 let token = manager.ensure_access_token(&service, &account).await?;
 ```

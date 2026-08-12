@@ -21,7 +21,7 @@ A GitHub App does **not** use any of the OAuth flows in [`sigilforge-core/src/oa
 There is no authorization code, no PKCE, and no refresh token. The exchange is:
 
 ```text
-  app id + installation id + PEM private key   (stored once, in the OS keyring)
+  app id + installation id + PEM private key   (stored once, in the secret store)
                     |
                     v
   RS256 JWT   iss = app id, iat = now - 60s, exp <= now + 10 minutes
@@ -39,6 +39,28 @@ five minutes of expiry. Minting per request would waste a round trip and burn
 rate limit for nothing.
 
 [`sigilforge-core/src/oauth/`]: ../sigilforge-core/src/oauth/
+
+## Headless hosts (no D-Bus session bus)
+
+If this machine is a server you reach over SSH - a DGX Spark, a CI runner, a
+container - do this **first**:
+
+```bash
+sigilforge store init
+```
+
+The OS keyring is not available there. It speaks to the Secret Service over the
+D-Bus *session* bus, and an SSH login has no session bus; every write fails with
+`dbus-launch: No existing session bus was found`. `store init` sets up an
+age-encrypted file store instead, which needs no session bus, no desktop, and no
+prompt on read, so `sigilforged` and CI can use it unattended.
+
+It prints the path of an identity file. **Back that file up.** It is the only
+key to the store: lose it and the App's private key is unrecoverable, and you
+will be generating a new one on github.com.
+
+Check what you got with `sigilforge store status`. On a desktop with a working
+keyring there is nothing to do - the keyring is used automatically.
 
 ## One-time setup (a human, in a browser)
 
@@ -70,7 +92,7 @@ Same page, scroll to **Private keys** -> **Generate a private key**. The browser
 downloads a `.pem` file (`<app-name>.<date>.private-key.pem`).
 
 This file is the credential. It is shown to you once. In a moment it goes into
-the OS keyring and the download should be deleted.
+Sigilforge's secret store and the download should be deleted.
 
 ### 4. Install the App on the org
 
@@ -103,8 +125,10 @@ sigilforge github-app register raibid-labs \
 The account name (`raibid-labs` here) is how you refer to this installation
 later; the org name is the obvious choice.
 
-The private key goes into the OS keyring. It is never written to a config file,
-never logged, and never included in `Debug` output. **Delete the downloaded
+The private key goes into the configured secret store - the OS keyring on a
+desktop, an age-encrypted file on a headless host (see
+[Headless hosts](#headless-hosts-no-d-bus-session-bus) above). It is never
+written to a config file, never logged, and never included in `Debug` output. **Delete the downloaded
 `.pem` now** - Sigilforge has it:
 
 ```bash
@@ -119,8 +143,10 @@ pbpaste | sigilforge github-app register raibid-labs \
 ```
 
 `register` verifies the key parses **and** reads it back out of the store before
-reporting success, so a keyring that silently drops writes fails here rather than
-an hour later in a cluster.
+reporting success, so a store that silently drops writes fails here rather than
+an hour later in a cluster. The store itself is probed before any of this, so a
+machine with no working storage fails on the first command with a message that
+names the backend and the reason.
 
 ## Using it
 
@@ -270,11 +296,14 @@ share the App and key but need one `Secret` each.
 
 ```rust,ignore
 use sigilforge_core::{
-    AccountId, KeyringStore,
+    AccountId, open_store,
     github_app::{GitHubAppCredential, GitHubAppTokenManager},
 };
 
-let store = KeyringStore::try_new("sigilforge")?;
+// Picks the keyring or the encrypted file store, probes it, and errors if
+// neither works. Do not reach for a specific backend here - the whole point is
+// that the same code runs on a laptop and on a headless server.
+let store = open_store()?;
 let manager = GitHubAppTokenManager::new(store);
 let account = AccountId::new("raibid-labs");
 
@@ -316,7 +345,12 @@ sigilforge/github-app/{account}/token_expiry         <- cache, RFC 3339
 
 The account is also recorded in `accounts.json` under the service `github-app`,
 because platform keyrings cannot enumerate keys - that file is the only way
-`github-app list` knows what exists.
+`github-app list` knows what exists. (The encrypted file store *can* enumerate,
+but `accounts.json` stays authoritative so both backends behave the same.)
+
+`github-app list` opens the secret store **before** reading `accounts.json`, so
+"No GitHub Apps registered" is only ever printed when storage is working and
+really is empty.
 
 ## Troubleshooting
 
@@ -326,7 +360,9 @@ because platform keyrings cannot enumerate keys - that file is the only way
 | `404: installation not found` | Wrong installation ID, or the App was uninstalled from the org. |
 | `403: the App lacks permission` | The App does not have Contents: Read, or the repository is outside the installation's selected set. |
 | `invalid GitHub App private key` | The file is not a PEM RSA key. GitHub issues PKCS#1 (`BEGIN RSA PRIVATE KEY`); PKCS#8 (`BEGIN PRIVATE KEY`) is also accepted. |
-| `the secret store accepted the private key but did not return it on read` | The OS keyring is not functional (locked, or no D-Bus session). See [TROUBLESHOOTING.md](TROUBLESHOOTING.md). |
+| `the secret store accepted the private key but did not return it on read` | The OS keyring is not functional (locked, or no D-Bus session). Run `sigilforge store init`. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md). |
+| `no usable secret storage backend` | Nothing to store the key in. On a headless host run `sigilforge store init`; `sigilforge store status` explains each backend. |
+| `No GitHub Apps registered` when one is registered | A bug fixed in v0.4.0: reads reported "not registered" when storage was unreachable. Upgrade. |
 | Argo CD reports `authentication required` | The `Secret` is in the wrong namespace, missing the `secret-type: repository` label, or its `url` does not match the URL in the `Application` spec (including the `.git` suffix). |
 
 ## Key rotation

@@ -4,11 +4,94 @@ This document provides solutions to common issues you may encounter when using S
 
 ## Table of Contents
 
-1. [Daemon Issues](#daemon-issues)
-2. [Authentication Issues](#authentication-issues)
-3. [CLI Issues](#cli-issues)
-4. [Storage Issues](#storage-issues)
-5. [Platform-Specific Issues](#platform-specific-issues)
+1. [Headless / no D-Bus session bus](#headless--no-d-bus-session-bus)
+2. [Daemon Issues](#daemon-issues)
+3. [Authentication Issues](#authentication-issues)
+4. [CLI Issues](#cli-issues)
+5. [Storage Issues](#storage-issues)
+6. [Platform-Specific Issues](#platform-specific-issues)
+
+---
+
+## Headless / no D-Bus session bus
+
+This is the first thing to check on a server reached over SSH.
+
+**Symptoms**: any write fails with a D-Bus error, and reads report credentials
+as missing.
+
+```
+$ sigilforge github-app register hdless --app-id 1 --installation-id 2 --key-file t.pem
+Caused by:
+  storage error: backend error: failed to set keyring password: Platform secure storage failure:
+  DBus error: dbus-launch: No existing session bus was found, and X11 autolaunch support was
+  disabled at compile time.
+```
+
+**Cause**: `KeyringStore` talks to the Secret Service over the D-Bus **session**
+bus, which a plain SSH login does not have. `dbus-launch` cannot start one
+without X11 either. No amount of `libsecret` will fix this: there is no session
+to attach to.
+
+**Fix**: use the encrypted file store, which needs no session bus, no desktop,
+and no prompt on read.
+
+```bash
+sigilforge store init      # once per host
+sigilforge store status    # confirm: "Selected: encrypted-file"
+```
+
+Everything afterwards - `github-app register`, `add-account`, `sigilforged` -
+picks it up automatically. See [ARCHITECTURE.md](ARCHITECTURE.md#encryptedfilestore)
+for what it writes where.
+
+**Back up the identity file it prints.** It is the only key to the store; there
+is no escrow and no recovery.
+
+### "No GitHub Apps registered" when an App *is* registered
+
+**Symptoms**: `github-app register` fails or is skipped, and a later command
+reports nothing registered:
+
+```
+$ sigilforge github-app list
+No GitHub Apps registered          # <-- storage was unavailable, not empty
+```
+
+**Cause**: a fixed bug. Reads used to report "not registered" when the real
+answer was "the store could not be opened", because `KeyringStore::try_new` only
+constructed an `Entry` and never proved the backend worked.
+
+**Fix**: upgrade. Since v0.4.0 `open_store` probes the backend with a real
+round-trip and read paths distinguish the two cases:
+
+```
+$ sigilforge github-app list
+Error: no usable secret storage backend
+  - encrypted-file: storage backend 'encrypted-file' is unavailable: no age identity at
+    /home/you/.config/sigilforge/age-identity.key; run `sigilforge store init` to create one
+  - keyring: storage backend 'keyring' is unavailable: writing a probe entry failed:
+    Platform secure storage failure: DBus error: ... No existing session bus was found ...
+```
+
+If you see "No GitHub Apps registered" from a current build, the store really is
+empty.
+
+### Forcing a backend
+
+```bash
+export SIGILFORGE_STORE_BACKEND=encrypted-file   # or keyring, memory, auto
+```
+
+or, persistently, in `~/.config/sigilforge/config.toml`:
+
+```toml
+[storage]
+backend = "encrypted-file"
+```
+
+An explicitly requested backend is never silently replaced with another one; if
+it does not work, the command fails and says why.
 
 ---
 
@@ -186,13 +269,14 @@ kill -TERM <PID>
    - System Preferences > Security & Privacy > Privacy > Full Disk Access
    - Add Terminal or your terminal emulator
 
-4. **Fallback to memory storage**
-   - Sigilforge falls back to in-memory storage if keyring unavailable
-   - **Warning**: Secrets not persisted across daemon restarts
-   - The fallback is not always reached: `KeyringStore::try_new` only constructs
-     an entry handle, so on a headless machine it succeeds and reads fail later.
-     The symptom is a write that reports success followed by "not found" from a
-     different process.
+4. **No fallback to memory storage (since v0.4.0)**
+   - Sigilforge no longer degrades to in-memory storage when the keyring is
+     unreachable. It reports the failure and stops.
+   - That fallback is what turned "storage is unavailable" into "you have no
+     credentials". `MemoryStore` is now used only when asked for by name
+     (`SIGILFORGE_STORE_BACKEND=memory`).
+   - On a host without a keyring, run `sigilforge store init` and use the
+     encrypted file store.
 
 5. **Secrets vanish between commands**
    - Write succeeds, the next command reports the credential is missing
@@ -287,11 +371,12 @@ rm ~/.config/sigilforge/accounts/<service>-<account>.yaml
    chmod 600 ~/.config/sigilforge/*.yaml
    ```
 
-2. **Keyring fallback to memory**
-   - If keyring unavailable, secrets stored in memory only
-   - Check logs for keyring initialization errors
+2. **Secret storage unavailable**
+   - Commands now fail rather than writing to memory; check which backend is in
+     play:
    ```bash
-   RUST_LOG=debug sigilforge-daemon
+   sigilforge store status
+   RUST_LOG=debug sigilforged
    ```
 
 3. **Disk full**
@@ -347,15 +432,45 @@ eval $(dbus-launch --sh-syntax)
 sudo apt-get install libsecret-1-0 libsecret-1-dev gnome-keyring
 ```
 
-**Headless Systems**: Use encrypted file storage instead:
-```yaml
-# ~/.config/sigilforge/config.yaml
-storage:
-  backend: "encrypted"
-  encrypted:
-    path: "~/.config/sigilforge/secrets.enc.yaml"
-    format: "rops"
+**Headless Systems**: none of the above helps - there is no session bus to
+connect to. Use encrypted file storage instead:
+
+```bash
+sigilforge store init
 ```
+
+which is equivalent to setting, in `~/.config/sigilforge/config.toml`:
+
+```toml
+[storage]
+backend = "encrypted-file"
+identity_file = "~/.config/sigilforge/age-identity.key"
+secrets_file  = "~/.local/share/sigilforge/secrets.age"
+```
+
+See [Headless / no D-Bus session bus](#headless--no-d-bus-session-bus).
+
+### Encrypted file store problems
+
+| Message | Meaning |
+|---------|---------|
+| `no age identity at ...; run \`sigilforge store init\`` | The store has not been set up on this host. |
+| `... is readable by other users (mode 0644); run: chmod 600 ...` | The identity file's permissions were loosened. Sigilforge refuses to use a private key other accounts can read. Fix the mode, and assume the key is compromised if the host is shared. |
+| `could not decrypt ... with the identity at ...` | The identity and the store do not match - usually a store restored from another host, or an identity that was regenerated. Restore the matching identity file. |
+| `... is zero bytes, which means it was truncated` | A failed copy or a full disk. Restore from backup. Writes are atomic, so this is never a normal state. |
+| `... was written by a newer Sigilforge` | Downgrade, or upgrade this host. |
+| `timed out waiting for the lock at ...` | Another Sigilforge process is writing, or one died holding the lock. Locks older than 60s are broken automatically; otherwise delete `secrets.age.lock`. |
+
+**Recovering without Sigilforge.** The store is a standard age file, so the
+`age` or `rage` CLI can read it:
+
+```bash
+age -d -i ~/.config/sigilforge/age-identity.key ~/.local/share/sigilforge/secrets.age
+```
+
+**If the identity file is lost**, the store cannot be decrypted by anyone,
+including you. Delete both files, run `sigilforge store init`, and re-register
+every credential.
 
 #### SELinux Denials
 

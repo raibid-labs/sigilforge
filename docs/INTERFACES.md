@@ -6,7 +6,11 @@ This document defines the trait-level API contracts and reference formats for Si
 
 ### SecretStore
 
-The `SecretStore` trait abstracts secret storage backends (keyring, encrypted files, memory).
+The `SecretStore` trait abstracts secret storage backends (keyring, encrypted
+file, memory). Do not construct one directly: call `open_store()`, which picks a
+backend from configuration, **probes** it, and returns an error rather than
+substituting a different one. See
+[ARCHITECTURE.md](ARCHITECTURE.md#backend-selection).
 
 ```rust
 use async_trait::async_trait;
@@ -35,6 +39,24 @@ pub enum StoreError {
 
     #[error("serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+
+    #[error("keyring not available: {message}")]
+    KeyringUnavailable { message: String },
+
+    /// A specific backend was selected but cannot be used right now.
+    /// Distinct from `NotFound`: the credential may well exist, we cannot
+    /// reach the place it lives.
+    #[error("storage backend '{backend}' is unavailable: {reason}")]
+    BackendUnavailable { backend: String, reason: String },
+
+    /// Nothing is usable and nothing was explicitly configured. Deliberately
+    /// fatal; the alternative is an empty store masquerading as the truth.
+    #[error("no usable secret storage backend\n{details}")]
+    NoBackend { details: String },
+
+    /// A key file is readable by users other than its owner.
+    #[error("{path} is readable by other users (mode {mode:04o}); run: chmod 600 {path}")]
+    InsecurePermissions { path: String, mode: u32 },
 }
 
 /// Abstraction over secret storage backends.
@@ -62,6 +84,41 @@ pub trait SecretStore: Send + Sync {
     }
 }
 ```
+
+#### Contract for implementers
+
+- `get` returns `Ok(None)` **only** when the backend was readable and the key was
+  absent. If the backend could not be consulted, return
+  `Err(StoreError::BackendUnavailable)`. Collapsing the two is silent data loss:
+  the caller cannot tell "no such credential" from "I could not look".
+- `list_keys` follows the same rule; `KeyringStore` returns an error because
+  platform keyrings cannot enumerate at all.
+- `delete` is idempotent and returns `Ok(())` for a key that was not there.
+
+#### Selecting a backend
+
+```rust
+pub enum StoreBackend { Keyring, EncryptedFile, Memory }
+
+/// Config file + environment, then probe. Errors rather than degrading.
+pub fn open_store() -> Result<Box<dyn SecretStore>, StoreError>;
+pub fn open_store_with(config: &StoreConfig) -> Result<Box<dyn SecretStore>, StoreError>;
+
+/// One row per backend, for `sigilforge store status`.
+pub fn probe_backends(config: &StoreConfig) -> Vec<BackendProbe>;
+
+/// First-run setup for the encrypted file store.
+pub fn init_encrypted_store(config: &StoreConfig) -> Result<InitOutcome, StoreError>;
+```
+
+| Precedence | Source |
+|-----------:|--------|
+| 1 | `SIGILFORGE_STORE_BACKEND` = `keyring` \| `encrypted-file` \| `memory` \| `auto` |
+| 2 | `[storage] backend` in `~/.config/sigilforge/config.toml` |
+| 3 | automatic: encrypted file if an identity exists, else keyring if it probes |
+
+`Memory` is never selected automatically, and an explicitly named backend is
+never silently replaced.
 
 #### Key Naming Convention
 
@@ -409,13 +466,13 @@ For applications linking `sigilforge-core` directly:
 ```rust
 use sigilforge_core::{
     ServiceId, AccountId, TokenManager,
-    stores::KeyringStore,
+    open_store,
     auth::DefaultTokenManager,
 };
 
 async fn example() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize store and manager
-    let store = KeyringStore::new()?;
+    let store = open_store()?;
     let manager = DefaultTokenManager::new(store);
 
     // Get a token
