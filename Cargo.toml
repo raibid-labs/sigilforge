@@ -56,6 +56,16 @@ keyring = { version = "3", features = [
     "windows-native",      # Windows: Credential Manager
 ] }
 
+# Encrypted file storage (headless hosts with no D-Bus session bus)
+#
+# `age` is a pure-Rust implementation of the age file-encryption format. It is
+# chosen over shelling out to `sops`/`age`/`gpg` because a missing binary on a
+# minimal server is exactly the failure mode this backend exists to avoid, and
+# over hand-rolled crypto because there is no good reason to hand-roll crypto.
+# Default features only: no `cli-common` (which would pull in a passphrase
+# prompt), no `plugin`, no `ssh`.
+age = { version = "0.12", default-features = false }
+
 # OAuth2
 oauth2 = "4.4"
 

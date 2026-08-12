@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`EncryptedFileStore`** - an age-encrypted file backing the `SecretStore`
+  trait, so Sigilforge works on a headless host (`encrypted-file-store` feature,
+  on by default)
+  - Encryption via the `age` crate (X25519 + ChaCha20-Poly1305). A Rust library
+    rather than a `sops`/`age`/`gpg` subprocess: a missing binary on a minimal
+    server is the same class of failure as the missing D-Bus session bus this
+    backend exists to route around. The file is still a standard age file, so
+    `age -d -i <identity> <store>` recovers it without Sigilforge.
+  - No session bus, no desktop, no agent, and no prompt on read, so daemons and
+    CI can use it unattended
+  - Identity file in the config directory, ciphertext in the data directory,
+    both created `0600`; an identity readable by group or other is **refused**
+  - Atomic whole-store rewrite (temp file, `fsync`, rename) under an advisory
+    lock; reads decrypt fresh, so a value written by one process is visible to
+    the next
+  - `list_keys` works, which it never did on the platform keyrings
+  - A zero-byte store file is reported as truncation, not as an empty store
+- `sigilforge store init` - first-run setup for a headless host: generates the
+  age identity, sets permissions, prints where it lives and that losing it loses
+  every secret
+- `sigilforge store status` - which backend is selected, what each one reports,
+  the paths in play, and the environment overrides
+- `open_store` / `open_store_with` / `probe_backends` / `init_encrypted_store`,
+  `StoreBackend`, `StoreConfig`, `BackendProbe` in `sigilforge_core::store`
+- `KeyringStore::probe` - a real write/read/delete round-trip against the
+  platform keyring
+- Backend selection by `SIGILFORGE_STORE_BACKEND` (or `[storage] backend` in
+  `~/.config/sigilforge/config.toml`), plus `SIGILFORGE_AGE_IDENTITY` and
+  `SIGILFORGE_SECRETS_FILE` path overrides
+- `StoreError::{BackendUnavailable, NoBackend, InsecurePermissions}`
 - GitHub App authentication in `sigilforge-core` (`github_app` module, `github-app` feature)
   - `GitHubAppCredential` holding app id, installation id, and a PEM private key;
     the key is validated on construction, stored in the `SecretStore`, and
@@ -26,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/GITHUB_APP.md` covering the one-time GitHub setup and the Argo CD path
 
 ### Fixed
+- **Reads reported "not found" when they meant "could not look".** `create_store`
+  silently substituted a `MemoryStore` whenever the keyring could not be
+  constructed, so on a host with no D-Bus session bus `github-app list` printed
+  "No GitHub Apps registered" for an App that was registered, `get-token` and
+  `resolve` said the credential did not exist, and `remove-account` reported
+  success while deleting nothing. Storage is now probed with a real round-trip,
+  and an unreachable backend is an error naming the backend and the reason.
+  `MemoryStore` is reachable only by asking for it by name.
+- `KeyringStore::try_new` still only constructs an `Entry` (it cannot do better
+  without contacting the platform), but nothing relies on it as an availability
+  check any more - `open_store` calls `probe` as well.
+- `github-app list` opens the secret store *before* reading `accounts.json`, so
+  "No GitHub Apps registered" is printed only when storage works and is empty.
+- `list-accounts` warns when account metadata is readable but the credentials
+  behind it are not.
 - **`KeyringStore` did not persist anything.** The `keyring` crate ships no
   credential store in its default features and silently falls back to an
   in-process mock, so every secret written "to the OS keyring" was lost at
@@ -37,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than in a cluster an hour later.
 
 ### Changed
+- **Breaking:** `create_store(bool)` returns `Result<Box<dyn SecretStore>, StoreError>`
+  instead of an infallible `Box<dyn SecretStore>`. The old signature had nowhere
+  to report "no storage", which is why it invented one. Prefer `open_store()`.
+- The daemon refuses to start without working secret storage, rather than
+  serving an in-memory store that answers every request with "not found".
+- `sigilforge-core` default features now include `encrypted-file-store`.
 - `docs/ROADMAP.md`: Phase 3 marked complete; the `get_token` and `resolve`
   handlers it described as stubs were wired up in 0.3.0
 - `docs/NEXT_STEPS.md` rewritten - it described the whole CLI as stubbed, which

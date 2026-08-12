@@ -16,6 +16,7 @@ path = "src/main.rs"
 sigilforge-core = { workspace = true, features = [
     "oauth",
     "keyring-store",
+    "encrypted-file-store",
     "github-app",
 ] }
 

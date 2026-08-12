@@ -5,7 +5,7 @@ use sigilforge_core::{
     account_store::AccountStore,
     model::{Account, AccountId, ServiceId},
     provider::ProviderRegistry,
-    store::{SecretStore, create_store},
+    store::{MemoryStore, SecretStore, open_store},
     token_manager::DefaultTokenManager,
 };
 use std::sync::Arc;
@@ -82,11 +82,19 @@ pub struct ApiState {
 
 impl ApiState {
     /// Create a new API state.
+    ///
+    /// # Errors
+    ///
+    /// Fails if no secret storage backend is usable. That is deliberate: a
+    /// daemon that starts on an in-memory store answers every `get_token` with
+    /// "not found" and every `add_account` with silent loss. Refusing to start
+    /// puts the failure where an operator will see it. See
+    /// [`sigilforge_core::store::open_store`].
     pub fn new() -> Result<Self> {
         let accounts = AccountStore::load()?;
 
-        // Create secret store (prefer keyring)
-        let store = create_store(true);
+        // A probed, persistent backend - or a hard error naming what failed.
+        let store = open_store()?;
 
         // Create provider registry with defaults
         let providers = ProviderRegistry::with_defaults();
@@ -95,9 +103,9 @@ impl ApiState {
         let token_manager = DefaultTokenManager::new(store, providers);
 
         // Clone references for resolver (store is moved, so we need to create another)
-        let resolver_store = create_store(true);
+        let resolver_store = open_store()?;
         let resolver_token_manager =
-            DefaultTokenManager::new(create_store(true), ProviderRegistry::with_defaults());
+            DefaultTokenManager::new(open_store()?, ProviderRegistry::with_defaults());
         let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
 
         Ok(Self {
@@ -108,15 +116,20 @@ impl ApiState {
     }
 
     /// Create API state with a provided account store (useful for tests).
+    ///
+    /// Uses an in-memory secret store, explicitly, because tests must not touch
+    /// the developer's keyring or encrypted store.
     #[allow(dead_code)]
     pub fn with_store(accounts: AccountStore) -> Self {
-        let store = create_store(false); // Use memory store for tests
+        let store: Box<dyn SecretStore> = Box::new(MemoryStore::new());
         let providers = ProviderRegistry::new();
         let token_manager = DefaultTokenManager::new(store, providers);
 
-        let resolver_store = create_store(false);
-        let resolver_token_manager =
-            DefaultTokenManager::new(create_store(false), ProviderRegistry::new());
+        let resolver_store: Box<dyn SecretStore> = Box::new(MemoryStore::new());
+        let resolver_token_manager = DefaultTokenManager::new(
+            Box::new(MemoryStore::new()) as Box<dyn SecretStore>,
+            ProviderRegistry::new(),
+        );
         let resolver = DefaultReferenceResolver::new(resolver_store, resolver_token_manager);
 
         Self {

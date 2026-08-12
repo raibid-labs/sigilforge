@@ -27,13 +27,46 @@ use sigilforge_core::{
     account_store::AccountStore,
     oauth::pkce::PkceFlow,
     provider::ProviderRegistry,
-    store::{KeyringStore, MemoryStore, SecretStore},
+    store::{SecretStore, open_store},
 };
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod client;
 mod github_app;
+mod store_cmd;
+
+/// Open the secret store, or fail with an error a human can act on.
+///
+/// Every direct-mode command goes through this. It exists because the previous
+/// shape - `KeyringStore::try_new(...)` with a `MemoryStore` fallback - turned
+/// "storage is unreachable" into "you have no credentials", which reads exactly
+/// like data loss. See `sigilforge store status`.
+fn secret_store() -> Result<Box<dyn SecretStore>> {
+    open_store().map_err(|e| {
+        anyhow::anyhow!(
+            "{e}\n\nSecret storage is unavailable, so Sigilforge cannot tell whether a \
+             credential exists. Run `sigilforge store status` to see the backends, or \
+             `sigilforge store init` to set up encrypted file storage on a host with no \
+             desktop keyring."
+        )
+    })
+}
+
+/// Warn when account metadata is readable but the secrets behind it are not.
+///
+/// `accounts.json` is plain JSON on disk; the credentials are not. Listing the
+/// first while the second is unreachable would show a healthy-looking inventory
+/// of tokens that cannot be read.
+fn warn_if_storage_unavailable() {
+    if let Err(e) = open_store() {
+        eprintln!(
+            "warning: secret storage is unavailable, so the credentials behind these \
+             accounts cannot be read.\n{}\nRun `sigilforge store status` for detail.",
+            e
+        );
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "sigilforge")]
@@ -108,6 +141,12 @@ enum Commands {
         command: github_app::GithubAppCommands,
     },
 
+    /// Set up and inspect secret storage (start here on a headless host)
+    Store {
+        #[command(subcommand)]
+        command: store_cmd::StoreCommands,
+    },
+
     /// Start the daemon in foreground (for debugging)
     Daemon,
 }
@@ -137,6 +176,7 @@ async fn main() -> Result<()> {
         } => remove_account(&service, &account, force).await,
         Commands::Resolve { reference } => resolve_reference(&reference).await,
         Commands::GithubApp { command } => github_app::run(command).await,
+        Commands::Store { command } => store_cmd::run(command),
         Commands::Daemon => run_daemon_foreground().await,
     }
 }
@@ -245,17 +285,10 @@ async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>
     // Exchange code for tokens
     let token_set = flow.exchange_code(auth_code).await?;
 
-    // Store tokens in keyring
-    let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {
-        Ok(s) => {
-            info!("Using keyring backend for token storage");
-            Box::new(s)
-        }
-        Err(e) => {
-            warn!("Keyring unavailable ({}); tokens will not persist", e);
-            Box::new(MemoryStore::new())
-        }
-    };
+    // Store the tokens. If storage is unavailable this fails here rather than
+    // "succeeding" into a store that evaporates - the user just completed a
+    // browser flow, and a silent no-op would waste it without saying so.
+    let store = secret_store()?;
 
     // Store access token
     let access_key = format!("sigilforge/{}/{}/access_token", service, account);
@@ -290,7 +323,7 @@ async fn fallback_add_account(service: &str, account: &str, scopes: Option<&str>
     account_store.add_account(new_account)?;
 
     println!("\nSuccess! Account {}/{} configured.", service, account);
-    println!("  Tokens stored securely in OS keyring");
+    println!("  Tokens stored in the configured secret store");
     if token_set.refresh_token.is_some() {
         println!("  Refresh token: stored (will auto-renew)");
     }
@@ -360,6 +393,10 @@ async fn fallback_list_accounts(service_filter: Option<&str>) -> Result<()> {
     let filter = service_filter.map(ServiceId::new);
     let accounts = store.list_accounts(filter.as_ref())?;
 
+    // This list comes from accounts.json, not from the secret store, so it can
+    // look healthy while every credential behind it is unreachable. Say so.
+    warn_if_storage_unavailable();
+
     if accounts.is_empty() {
         println!("No accounts configured");
         if let Some(service) = service_filter {
@@ -417,16 +454,9 @@ async fn get_token(service: &str, account: &str, format: &str) -> Result<()> {
 }
 
 async fn fallback_get_token(service: &str, account: &str, format: &str) -> Result<()> {
-    // Initialize secret store
-    let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {
-        Ok(s) => Box::new(s),
-        Err(e) => {
-            return Err(anyhow::anyhow!(
-                "Keyring unavailable: {}. Cannot retrieve tokens.",
-                e
-            ));
-        }
-    };
+    // Opening the store proves it is readable, so a `None` below really does
+    // mean "no such token" and not "could not look".
+    let store = secret_store()?;
 
     // Try to get access token
     let access_key = format!("sigilforge/{}/{}/access_token", service, account);
@@ -538,20 +568,9 @@ async fn remove_account(service: &str, account: &str, force: bool) -> Result<()>
 }
 
 async fn delete_account_secrets(service: &str, account: &str) -> Result<()> {
-    // Choose the best available secret store
-    let store: Box<dyn SecretStore + Send + Sync> = match KeyringStore::try_new("sigilforge") {
-        Ok(s) => {
-            info!("Using keyring backend to delete secrets");
-            Box::new(s)
-        }
-        Err(e) => {
-            warn!(
-                "Keyring unavailable ({}); falling back to memory store (no-op)",
-                e
-            );
-            Box::new(MemoryStore::new())
-        }
-    };
+    // Deleting from a MemoryStore is a no-op that prints "removed successfully"
+    // while the real secrets stay where they are. Fail instead.
+    let store = secret_store()?;
 
     // Common credential types to clean up
     let credential_types = [
@@ -608,9 +627,7 @@ async fn fallback_resolve_reference(reference: &str) -> Result<()> {
     // GitHub App references are minted, not looked up: a raw store read would
     // return the cached token even when it is about to expire.
     if cred_ref.service.as_str() == sigilforge_core::GITHUB_APP_SERVICE {
-        let store = KeyringStore::try_new("sigilforge")
-            .map_err(|e| anyhow::anyhow!("Keyring unavailable: {}", e))?;
-        let manager = sigilforge_core::GitHubAppTokenManager::new(store);
+        let manager = sigilforge_core::GitHubAppTokenManager::new(secret_store()?);
 
         let value = manager.resolve_ref(&cred_ref).await?;
         match value {
@@ -623,16 +640,7 @@ async fn fallback_resolve_reference(reference: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Initialize secret store
-    let store: Box<dyn SecretStore> = match KeyringStore::try_new("sigilforge") {
-        Ok(s) => Box::new(s),
-        Err(e) => {
-            return Err(anyhow::anyhow!(
-                "Keyring unavailable: {}. Cannot resolve credentials.",
-                e
-            ));
-        }
-    };
+    let store = secret_store()?;
 
     // Build the key based on credential type
     let key = format!(

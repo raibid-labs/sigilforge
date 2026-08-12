@@ -20,8 +20,12 @@
 //! ```
 //!
 //! These commands talk to `sigilforge-core` directly rather than through the
-//! daemon: registration writes to the user's keyring, and minting needs the
-//! private key, so there is nothing the daemon would add.
+//! daemon: registration writes to the configured secret store, and minting needs
+//! the private key, so there is nothing the daemon would add.
+//!
+//! On a host with no D-Bus session bus - a server over SSH - run
+//! `sigilforge store init` once first. Without a working store these commands
+//! fail loudly rather than reporting an App as unregistered.
 
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
@@ -34,7 +38,7 @@ use sigilforge_core::{
     github_app::{
         ArgoCdRepositorySecret, GITHUB_APP_SERVICE, GitHubAppCredential, GitHubAppTokenManager,
     },
-    store::KeyringStore,
+    store::{SecretStore, open_store},
 };
 
 /// Subcommands under `sigilforge github-app`.
@@ -147,19 +151,24 @@ pub async fn run(command: GithubAppCommands) -> Result<()> {
     }
 }
 
-/// Build a keyring-backed manager.
+/// Build a manager over the configured secret store.
 ///
-/// Unlike the OAuth paths, this refuses to fall back to [`MemoryStore`]: a
-/// registration that vanishes at process exit looks like success and fails an
-/// hour later, in a cluster, with no key.
+/// The store is opened and probed here, so this fails on a machine with no
+/// working storage instead of a registration vanishing at process exit and
+/// failing an hour later, in a cluster, with no key.
+///
+/// Never falls back to [`MemoryStore`], and never falls back from one persistent
+/// backend to another: a key written to the keyring is not in the encrypted
+/// file, and silently reading the wrong one is how "no GitHub Apps registered"
+/// gets printed at a host that has one.
 ///
 /// [`MemoryStore`]: sigilforge_core::MemoryStore
-fn manager() -> Result<GitHubAppTokenManager<KeyringStore>> {
-    let store = KeyringStore::try_new("sigilforge").map_err(|e| {
+fn manager() -> Result<GitHubAppTokenManager<Box<dyn SecretStore>>> {
+    let store = open_store().map_err(|e| {
         anyhow::anyhow!(
-            "Keyring unavailable: {}. GitHub App private keys must persist, so \
-             falling back to in-memory storage would be worse than failing here.",
-            e
+            "{e}\n\nGitHub App private keys must persist, so falling back to in-memory \
+             storage would be worse than failing here. On a host with no desktop \
+             keyring, run `sigilforge store init` once to set up encrypted file storage."
         )
     })?;
 
@@ -193,7 +202,7 @@ async fn register(
     );
     println!("  App ID:          {}", app_id);
     println!("  Installation ID: {}", installation_id);
-    println!("  Private key:     stored in the OS keyring");
+    println!("  Private key:     stored in the configured secret store");
     println!();
     println!(
         "  Reference it as: auth://{}/{}/installation_token",
@@ -246,6 +255,12 @@ fn record_account(account: &AccountId) -> Result<()> {
 }
 
 async fn list() -> Result<()> {
+    // Open storage *first*. Reporting "No GitHub Apps registered" without having
+    // looked is the bug this ordering exists to prevent: on a host with no
+    // D-Bus session that message was printed while a perfectly good
+    // registration sat in a store nobody could open.
+    let manager = manager()?;
+
     let accounts =
         AccountStore::load()?.list_accounts(Some(&ServiceId::new(GITHUB_APP_SERVICE)))?;
 
@@ -255,8 +270,6 @@ async fn list() -> Result<()> {
         println!("      --app-id <ID> --installation-id <ID> --key-file <PATH>");
         return Ok(());
     }
-
-    let manager = manager()?;
 
     println!("Registered GitHub Apps:");
     for account in accounts {
